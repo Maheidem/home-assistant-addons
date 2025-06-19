@@ -1,0 +1,27 @@
+# Standalone Claude Terminal for Containerized HomeAssistant
+FROM alpine:3.19
+
+# Install packages in a single layer to minimize image size
+RUN apk add --no-cache \
+    nodejs \
+    npm \
+    bash \
+    curl \
+    ttyd \
+    jq \
+    && npm install -g @anthropic-ai/claude-code@latest \
+    && npm cache clean --force
+
+# Create directory for Claude configuration and set working directory
+RUN mkdir -p /config/claude-config
+WORKDIR /config
+
+# Copy startup script
+COPY run-standalone.sh /run.sh
+RUN chmod +x /run.sh
+
+# Expose port
+EXPOSE 7681
+
+# Use exec form for better signal handling
+CMD ["/run.sh"]

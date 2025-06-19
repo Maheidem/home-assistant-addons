@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Your existing HomeAssistant container
+  homeassistant:
+    container_name: homeassistant
+    image: homeassistant/home-assistant:stable
+    volumes:
+      - ./config:/config
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+
+  # Claude Terminal service
+  claude-terminal:
+    container_name: claude-terminal
+    build:
+      context: .
+      dockerfile: Dockerfile.standalone
+    ports:
+      - "7681:7681"
+    volumes:
+      # Map to your HomeAssistant config directory
+      - ./config:/config:rw
+      # Persistent storage for Claude credentials
+      - claude-auth-data:/root/.config/anthropic
+    environment:
+      - CLAUDE_CREDENTIALS_DIRECTORY=/config/claude-config
+      - ANTHROPIC_CONFIG_DIR=/config/claude-config
+    depends_on:
+      - homeassistant
+    restart: unless-stopped
+    networks:
+      - claude-network
+
+volumes:
+  claude-auth-data:
+    driver: local
+
+networks:
+  claude-network:
+    driver: bridge
