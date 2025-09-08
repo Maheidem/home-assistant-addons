@@ -20,6 +20,7 @@ direnv allow
 ### Core Development Commands
 - `build-addon` - Build the Claude Terminal add-on with Podman
 - `run-addon` - Run add-on locally on port 7681 with volume mapping
+- `validate-addon` - Validate add-on structure (requires HA OS environment)
 - `lint-dockerfile` - Lint Dockerfile using hadolint
 - `test-endpoint` - Test web endpoint availability (curl localhost:7681)
 
@@ -69,10 +70,9 @@ The add-on implements a sophisticated credential management system:
 
 ## Development Notes
 
-### Local Container Testing
-For rapid development and debugging without pushing new versions:
+### Container Testing
+For rapid development and testing without pushing new versions:
 
-#### Quick Build & Test
 ```bash
 # Build test version
 podman build --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.19 -t local/claude-terminal:test ./claude-terminal
@@ -86,45 +86,16 @@ echo '{"auto_launch_claude": false}' > /tmp/test-config/options.json
 # Run test container
 podman run -d --name test-claude-dev -p 7681:7681 -v /tmp/test-config:/config local/claude-terminal:test
 
-# Check logs
-podman logs test-claude-dev
-
 # Test web interface at http://localhost:7681
 
 # Stop and cleanup
 podman stop test-claude-dev && podman rm test-claude-dev
 ```
 
-#### Interactive Testing
-```bash
-# Test session picker directly
-podman run --rm -it local/claude-terminal:test /opt/scripts/claude-session-picker.sh
-
-# Execute commands inside running container
-podman exec -it test-claude-dev /bin/bash
-
-# Test script modifications without rebuilding
-podman cp ./claude-terminal/scripts/claude-session-picker.sh test-claude-dev:/opt/scripts/
-podman exec test-claude-dev chmod +x /opt/scripts/claude-session-picker.sh
-```
-
-#### Development Workflow
-1. **Make changes** to scripts or Dockerfile
-2. **Rebuild** with `podman build -t local/claude-terminal:test ./claude-terminal`
-3. **Stop/remove** old container: `podman stop test-claude-dev && podman rm test-claude-dev`
-4. **Start new** container with updated image
-5. **Test** changes at http://localhost:7681
-6. **Repeat** until satisfied, then commit and push
-
-#### Debugging Tips
-- **Check container logs**: `podman logs -f test-claude-dev` (follow mode)
-- **Inspect running processes**: `podman exec test-claude-dev ps aux`
-- **Test individual scripts**: `podman exec test-claude-dev /opt/scripts/script-name.sh`
-- **Volume contents**: `ls -la /tmp/test-config/` to verify persistence
-
-### Production Testing
-- **Local Testing**: Use `run-addon` to test on localhost:7681
-- **Container Health**: Check logs with `podman logs <container-id>`
+### Debugging
+- **Container logs**: `podman logs -f test-claude-dev`
+- **Execute commands**: `podman exec -it test-claude-dev /bin/bash`
+- **Test scripts**: `podman exec test-claude-dev /opt/scripts/script-name.sh`
 - **Authentication**: Use `claude-auth debug` within terminal for credential troubleshooting
 
 ### File Conventions

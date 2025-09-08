@@ -11,8 +11,10 @@ RUN apk add --no-cache \
     && npm install -g @anthropic-ai/claude-code@latest \
     && npm cache clean --force
 
-# Create directory for Claude configuration and set working directory
-RUN mkdir -p /config/claude-config
+# Create directories for Claude configuration and set working directory
+RUN mkdir -p /config/claude-config/.claude \
+    && chmod 755 /config/claude-config \
+    && chmod 755 /config/claude-config/.claude
 WORKDIR /config
 
 # Copy startup script and modular scripts

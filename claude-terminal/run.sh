@@ -6,14 +6,33 @@ init_environment() {
     mkdir -p /config/claude-config
     chmod 755 /config/claude-config
 
-    # Set up Claude Code CLI config directory
+    # Create subdirectories for Claude CLI storage
+    mkdir -p /config/claude-config/.claude
     mkdir -p /root/.config
     
-    # Remove existing link if it exists and create fresh symlink
+    # Remove existing links if they exist and create fresh symlinks
     rm -rf /root/.config/anthropic
+    rm -rf /root/.claude
+    rm -f /root/.claude.json
+    
+    # Create symlinks for ALL Claude storage locations
     ln -sf /config/claude-config /root/.config/anthropic
+    ln -sf /config/claude-config/.claude /root/.claude
+    ln -sf /config/claude-config/.claude.json /root/.claude.json
 
-    # Ensure proper permissions on any existing credential files
+    # Restore existing authentication files if they exist
+    if [ -f "/config/claude-config/.claude.json" ]; then
+        chmod 600 /config/claude-config/.claude.json
+        bashio::log.info "Restored existing Claude configuration"
+    fi
+    
+    # Restore .claude directory contents if they exist
+    if [ -d "/config/claude-config/.claude" ]; then
+        find /config/claude-config/.claude -type f -exec chmod 600 {} \;
+        bashio::log.info "Restored existing Claude directory"
+    fi
+
+    # Legacy credential files (keeping for backward compatibility)
     if [ -f "/config/claude-config/session_key" ]; then
         chmod 600 /config/claude-config/session_key
     fi
@@ -25,7 +44,7 @@ init_environment() {
     export ANTHROPIC_CONFIG_DIR="/config/claude-config"
     export HOME="/root"
     
-    bashio::log.info "Credential directory initialized: /config/claude-config"
+    bashio::log.info "Claude authentication persistence initialized"
 }
 
 # Install required tools
@@ -76,6 +95,18 @@ get_claude_launch_command() {
 }
 
 
+# Start credential monitoring service
+start_credential_monitor() {
+    if [ -f "/opt/scripts/credential-monitor.sh" ]; then
+        bashio::log.info "Starting credential monitoring service..."
+        /opt/scripts/credential-monitor.sh &
+        MONITOR_PID=$!
+        bashio::log.info "Credential monitor started (PID: ${MONITOR_PID})"
+    else
+        bashio::log.warning "Credential monitor script not found"
+    fi
+}
+
 # Start main web terminal
 start_web_terminal() {
     local port=7681
@@ -85,6 +116,9 @@ start_web_terminal() {
     bashio::log.info "Environment variables:"
     bashio::log.info "ANTHROPIC_CONFIG_DIR=${ANTHROPIC_CONFIG_DIR}"
     bashio::log.info "HOME=${HOME}"
+
+    # Start credential monitoring in background
+    start_credential_monitor
 
     # Get the appropriate launch command based on configuration
     local launch_command
