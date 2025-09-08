@@ -75,15 +75,21 @@ setup_session_picker() {
 # Determine Claude launch command based on configuration
 get_claude_launch_command() {
     local auto_launch_claude
+    local persistent_sessions
     
-    # Get configuration value, default to true for backward compatibility
+    # Get configuration values
     auto_launch_claude=$(bashio::config 'auto_launch_claude' 'true')
+    persistent_sessions=$(bashio::config 'persistent_sessions' 'true')
     
-    if [ "$auto_launch_claude" = "true" ]; then
+    # Check if auto-session manager should be used
+    if [ "$persistent_sessions" = "true" ] && [ -f "/opt/scripts/auto-session-manager.sh" ]; then
+        # Use transparent session management
+        echo "/opt/scripts/auto-session-manager.sh"
+    elif [ "$auto_launch_claude" = "true" ]; then
         # Original behavior: auto-launch Claude directly
         echo "clear && echo 'Welcome to Claude Terminal!' && echo '' && echo 'Starting Claude...' && sleep 1 && node \$(which claude)"
     else
-        # New behavior: show interactive session picker
+        # Interactive session picker
         if [ -f /usr/local/bin/claude-session-picker ]; then
             echo "clear && /usr/local/bin/claude-session-picker"
         else
