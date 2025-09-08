@@ -8,6 +8,8 @@ RUN apk add --no-cache \
     bash \
     curl \
     nano \
+    tmux \
+    screen \
     && npm install -g @anthropic-ai/claude-code@latest \
     && npm cache clean --force
 
