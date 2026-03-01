@@ -1,0 +1,13 @@
+configuration:
+  auto_launch_claude:
+    name: Auto-launch Claude
+    description: >-
+      Automatically start Claude when you open the terminal. Disable this to
+      show an interactive session picker that lets you choose between a new
+      session, continuing the most recent conversation, or resuming from a list.
+  persistent_sessions:
+    name: Persistent Sessions
+    description: >-
+      Keep your terminal session alive when you close the browser tab. Reconnecting
+      will resume where you left off. Uses tmux under the hood. Note: this persists
+      across browser disconnects, not across add-on restarts.

@@ -16,25 +16,40 @@ This add-on provides a web-based terminal with Claude Code CLI pre-installed, al
 
 ## Configuration
 
-No configuration is needed! The add-on uses OAuth authentication, so you'll be prompted to log in to your Anthropic account the first time you use it.
+No configuration is needed to get started. The add-on uses OAuth authentication — you will be prompted to log in to your Anthropic account the first time you use it.
 
-Your OAuth credentials are stored in the `/config/claude-config` directory and will persist across add-on updates and restarts, so you won't need to log in again.
+Your OAuth credentials are stored in the `/config/claude-config` directory and persist across add-on updates and restarts, so you will not need to log in again.
+
+### Options
+
+| Option | Default | Description |
+|---|---|---|
+| `auto_launch_claude` | `true` | Automatically start Claude when the terminal opens. Set to `false` to show an interactive session picker. |
+| `persistent_sessions` | `true` | Keep the terminal session alive when you close the browser tab. Reconnecting resumes where you left off. |
+
+> **Note:** `persistent_sessions` persists across browser disconnects only. Restarting the add-on will start a fresh session.
+
+> **Note:** Only one persistent session is supported at a time. If multiple users connect simultaneously, they will share the same terminal session.
+
+## Access
+
+This add-on is restricted to **Home Assistant admin users only**. Non-admin accounts will not see it in the sidebar.
 
 ## Usage
 
 Claude launches automatically when you open the terminal. You can also start Claude manually with:
 
 ```bash
-node /usr/local/bin/claude
+claude
 ```
 
 ### Common Commands
 
-- `claude -i` - Start an interactive Claude session
-- `claude --help` - See all available commands
-- `claude "your prompt"` - Ask Claude a single question
-- `claude process myfile.py` - Have Claude analyze a file
-- `claude --editor` - Start an interactive editor session
+- `claude` - Start a new interactive Claude session
+- `claude -c` - Continue the most recent conversation
+- `claude -r` - Resume a previous conversation from a list
+- `claude -p "your prompt"` - Ask Claude a single question (non-interactive)
+- `claude --help` - See all available commands and flags
 
 The terminal starts directly in your `/config` directory, giving you immediate access to all your Home Assistant configuration files. This makes it easy to get help with your configuration, create automations, and troubleshoot issues.
 
@@ -49,7 +64,7 @@ The terminal starts directly in your `/config` directory, giving you immediate a
 
 ## Troubleshooting
 
-- If Claude doesn't start automatically, try running `node /usr/local/bin/claude -i` manually
+- If Claude doesn't start automatically, try running `claude` manually in the terminal
 - If you see permission errors, try restarting the add-on
 - If you have authentication issues, try logging out and back in
 - Check the add-on logs for any error messages

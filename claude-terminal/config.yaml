@@ -28,12 +28,8 @@ ports_description:
 
 # Add-on configuration options
 options:
-  auto_launch_claude:
-    name: "Auto-launch Claude"
-    description: "Automatically start Claude on terminal open (disable for interactive session picker)"
-  persistent_sessions:
-    name: "Persistent Sessions"
-    description: "Enable transparent session persistence - automatically resume your work when reconnecting"
+  auto_launch_claude: true
+  persistent_sessions: true
 schema:
   auto_launch_claude: bool?
   persistent_sessions: bool?
@@ -41,10 +37,7 @@ schema:
 # Volume mapping for persistent storage
 map:
   - config:rw    # Claude configuration and credentials
-  - addons:rw    # Access to other add-ons for development
+  - addons:ro    # Read-only access to other add-ons
 
 # Service startup configuration
 startup: services
-
-# Web UI access URL
-webui: http://[HOST]:[PORT:7681]/
