@@ -23,7 +23,51 @@ chmod 700 "${CLAUDE_DIR}"
 
 if [ ! -f "${CLAUDE_DIR}/settings.json" ]; then
     cp "${DEFAULT_SETTINGS}" "${CLAUDE_DIR}/settings.json"
-    bashio::log.info "Seeded default settings.json (USE_BUILTIN_RIPGREP=0, DISABLE_AUTOUPDATER=1)"
+    bashio::log.info "Seeded default settings.json"
+fi
+
+# --- Persist Claude Code installations ------------------------------------
+# Claude's native installer writes the binary to /root/.local/share/claude/
+# versions/X.Y.Z and points /root/.local/bin/claude at the active version.
+# Neither path is on the persistent volume by default, so both auto-updates
+# and manual `claude install X` calls vanish on add-on restart.
+#
+# Fix: symlink /root/.local/share/claude → persistent volume; on boot,
+# re-point /root/.local/bin/claude at the newest installed version.
+CLAUDE_INSTALLS="${CLAUDE_DIR}/claude-installations"
+mkdir -p "${CLAUDE_INSTALLS}/versions"
+
+# Copy any versions the image ships that aren't already in persistent storage.
+# Covers (a) first-ever boot — persistent is empty, image seeds it; and
+# (b) image upgrades — when a new image pin brings a newer Claude version,
+# it lands in persistent without disturbing any versions the user already has.
+if [ ! -L /root/.local/share/claude ] && [ -d /root/.local/share/claude/versions ]; then
+    for img_ver in /root/.local/share/claude/versions/*; do
+        [ -e "${img_ver}" ] || continue
+        ver_name="$(basename "${img_ver}")"
+        if [ ! -e "${CLAUDE_INSTALLS}/versions/${ver_name}" ]; then
+            cp -a "${img_ver}" "${CLAUDE_INSTALLS}/versions/"
+            bashio::log.info "Seeded Claude Code version from image: ${ver_name}"
+        fi
+    done
+fi
+
+# Replace the image's install dir with a symlink into persistent storage.
+if [ ! -L /root/.local/share/claude ] \
+   || [ "$(readlink /root/.local/share/claude)" != "${CLAUDE_INSTALLS}" ]; then
+    rm -rf /root/.local/share/claude
+    ln -sfn "${CLAUDE_INSTALLS}" /root/.local/share/claude
+fi
+
+# Re-point /root/.local/bin/claude at the newest installed version.
+# (`claude install X` and the auto-updater both write into persistent storage
+# via the symlink above, but /root/.local/bin/claude is in the image and gets
+# reset on every restart — so update it here.)
+NEWEST_VER=$(ls -1 "${CLAUDE_INSTALLS}/versions" 2>/dev/null | sort -V | tail -1 || true)
+if [ -n "${NEWEST_VER}" ]; then
+    mkdir -p /root/.local/bin
+    ln -sfn "${CLAUDE_INSTALLS}/versions/${NEWEST_VER}" /root/.local/bin/claude
+    bashio::log.info "Active Claude Code version: ${NEWEST_VER}"
 fi
 
 # --- Persist auxiliary user state -----------------------------------------

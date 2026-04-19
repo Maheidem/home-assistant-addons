@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.1
+
+Bug-fix release. No breaking changes.
+
+### Fixed
+- **Claude Code updates now persist.** `claude install X` and the built-in auto-updater both wrote to `/root/.local/share/claude/versions/`, which was inside the container (not on the persistent volume). Updates vanished on add-on restart. Fixed by symlinking the install dir into `/config/claude-config/claude-installations/` and re-pointing `/root/.local/bin/claude` at the newest installed version on every boot.
+- **Auto-updater re-enabled by default.** 2.0.0 shipped with `DISABLE_AUTOUPDATER=1` on the premise that "the image is the unit of update." With the persistence fix above, Claude can self-update safely, so the default is removed. Users who want to pin can add `"DISABLE_AUTOUPDATER": "1"` to `env` in `/config/claude-config/settings.json` themselves.
+- **Bumped pinned Claude Code version** from 2.1.89 to **2.1.114**.
+
+### Upgrade notes
+- If you're on 2.0.0 and manually ran `claude install X`, that version was lost. Either let the auto-updater pull the latest, or re-run `claude install X`. With 2.0.1 it will stick.
+- If you explicitly want 2.0.0's "no auto-update" behavior back, edit `/config/claude-config/settings.json` and add `"DISABLE_AUTOUPDATER": "1"` inside the `env` object. Existing 2.0.0 `settings.json` files already have this entry and will keep working unchanged (the defaults only seed when the file doesn't exist).
+
 ## 2.0.0
 
 Major rewrite focused on simplicity and a single, predictable persistence model. **Breaking changes** — see migration notes below.

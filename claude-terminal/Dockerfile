@@ -67,7 +67,7 @@ RUN arch="$(dpkg --print-architecture)" \
 # Official native installer. Works on glibc distros (Debian). Pinned version.
 # Auto-updates are disabled via DISABLE_AUTOUPDATER in default settings; the
 # image is the unit of update.
-ENV CLAUDE_VERSION=2.1.89
+ENV CLAUDE_VERSION=2.1.114
 RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_VERSION}" \
     && /root/.local/bin/claude --version
 
@@ -85,13 +85,14 @@ ENV PATH="/root/.local/bin:${PATH}"
 # --- Default settings ----------------------------------------------------
 # run.sh copies this into the persistent volume on first boot if absent.
 # - USE_BUILTIN_RIPGREP=0 → use system ripgrep
-# - DISABLE_AUTOUPDATER=1 → image is the update unit; rebuilds bump versions
+# Auto-update is NOT disabled: the install dir is persisted (see run.sh) so
+# Claude's own updater and manual `claude install X` both stick across restarts.
+# Users who want to pin can add `"DISABLE_AUTOUPDATER": "1"` here themselves.
 RUN mkdir -p /opt/claude-defaults \
     && printf '%s\n' \
        '{' \
        '  "env": {' \
-       '    "USE_BUILTIN_RIPGREP": "0",' \
-       '    "DISABLE_AUTOUPDATER": "1"' \
+       '    "USE_BUILTIN_RIPGREP": "0"' \
        '  }' \
        '}' > /opt/claude-defaults/settings.json
 
