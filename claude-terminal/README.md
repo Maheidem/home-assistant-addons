@@ -1,166 +1,69 @@
 # Claude Terminal for Home Assistant
 
-A secure, web-based terminal with Claude Code CLI pre-installed for Home Assistant.
+A persistent web terminal with Anthropic's Claude Code CLI pre-installed. Open it from your HA dashboard, type `claude`, log in. Close the browser; your session keeps running. Reopen the add-on later — you're back where you left off.
 
 ![Claude Terminal Screenshot](https://github.com/heytcass/home-assistant-addons/raw/main/claude-terminal/screenshot.png)
 
-*Claude Terminal running in Home Assistant*
+## What you get
 
-## What is Claude Terminal?
-
-This add-on provides a web-based terminal interface with Claude Code CLI pre-installed, allowing you to use Claude's powerful AI capabilities directly from your Home Assistant dashboard. It gives you direct access to Anthropic's Claude AI assistant through a terminal, ideal for:
-
-- Writing and editing code
-- Debugging problems
-- Learning new programming concepts
-- Creating Home Assistant scripts and automations
-
-## Features
-
-- **Web Terminal Interface**: Access Claude through a browser-based terminal using ttyd
-- **Auto-Launch**: Claude starts automatically when you open the terminal
-- **Latest Claude Code CLI**: Pre-installed with Anthropic's official CLI (@latest)
-- **No Configuration Needed**: Uses OAuth authentication for easy setup
-- **Direct Config Access**: Terminal starts in your `/config` directory for immediate access to all Home Assistant files
-- **Home Assistant Integration**: Access directly from your dashboard
-- **Panel Icon**: Quick access from the sidebar with the code-braces icon
-- **Multi-Architecture Support**: Works on amd64, aarch64, and armv7 platforms
-- **Secure Credential Management**: Persistent authentication with safe credential storage
-- **Automatic Recovery**: Built-in fallbacks and error handling for reliable operation
-
-## Quick Start
-
-The terminal automatically starts Claude when you open it. You can immediately start using commands like:
-
-```bash
-# Ask Claude a question directly
-claude "How can I write a Python script to control my lights?"
-
-# Start an interactive session
-claude -i
-
-# Get help with available commands
-claude --help
-
-# Debug authentication if needed
-claude-auth debug
-
-# Log out and re-authenticate
-claude-logout
-```
+- **Web terminal** in the HA dashboard via ttyd, served through HA ingress
+- **Claude Code CLI** pre-installed (pinned version, see `CHANGELOG.md`)
+- **Persistent sessions** via tmux — close the browser, the terminal keeps running
+- **Persistent everything** — auth, plugins, MCP servers, skills, agents, conversation history all live under `/config/claude-config/` and survive container restarts and add-on updates
+- **One configuration knob** — `startup_command` lets you auto-run anything you want in the tmux session at boot (e.g. always-on Telegram bot)
+- **Bun installed** so plugin runtimes that need it (Telegram channel, etc.) just work
+- **Common dev tools** — git, github-cli, openssh-client, jq, yq-go, ripgrep, python3, nano, tree, nodejs, npm
 
 ## Installation
 
-1. Add this repository to your Home Assistant add-on store
-2. Install the Claude Terminal add-on
-3. Start the add-on
-4. Click "OPEN WEB UI" or the sidebar icon to access
-5. On first use, follow the OAuth prompts to log in to your Anthropic account
+1. Add this repository to your HA add-on store
+2. Install **Claude Terminal**
+3. Start the add-on, click **OPEN WEB UI**
+4. Type `claude` in the terminal, follow the OAuth browser prompts to log in
 
-## Configuration
+## The single configuration option
 
-The add-on requires no configuration. All settings are handled automatically:
+`startup_command` (string, optional). Whatever you put there runs in the tmux session at container boot.
 
-- **Port**: Web interface runs on port 7681
-- **Authentication**: OAuth with Anthropic (credentials stored securely in `/config/claude-config/`)
-- **Terminal**: Full bash environment with Claude Code CLI pre-installed
-- **Volumes**: Access to both `/config` (Home Assistant) and `/addons` (for development)
+```yaml
+# Plain bash — type `claude` yourself when you want it (default)
+startup_command: ""
 
-## Troubleshooting
+# Auto-launch Claude on every boot
+startup_command: "claude"
 
-### Authentication Issues
-If you have authentication problems:
-```bash
-claude-auth debug    # Show credential status
-claude-logout        # Clear credentials and re-authenticate
+# Resume your most recent conversation on every boot
+startup_command: "claude -c"
+
+# Always-on Telegram bot — reachable 24/7, no browser required
+startup_command: "claude -c --channels plugin:telegram@claude-plugins-official"
 ```
 
-### Container Issues
-- Credentials are automatically saved and restored between restarts
-- Check add-on logs if the terminal doesn't load
-- Restart the add-on if Claude commands aren't recognized
+If the command exits, the tmux session falls through to a bash prompt so you can recover via the web terminal.
 
-### Development
-For local development and testing:
-```bash
-# Enter development environment
-nix develop
+> **First-time:** leave `startup_command` empty so you can log in interactively, install plugins, configure them. Then set the command and restart the add-on.
 
-# Build and test locally
-build-addon
-run-addon
+## Architectures
 
-# Lint and validate
-lint-dockerfile
-test-endpoint
-```
-
-## Architecture
-
-- **Base Image**: Home Assistant Alpine Linux base (3.19)
-- **Container Runtime**: Compatible with Docker/Podman
-- **Web Terminal**: ttyd for browser-based access
-- **Process Management**: s6-overlay for reliable service startup
-- **Networking**: Ingress support with Home Assistant reverse proxy
-
-## Security
-
-Version 1.0.2 includes important security improvements:
-- ✅ **Secure Credential Management**: Limited filesystem access to safe directories only
-- ✅ **Safe Cleanup Operations**: No more dangerous system-wide file deletions
-- ✅ **Proper Permission Handling**: Consistent file permissions (600) for credentials
-- ✅ **Input Validation**: Enhanced error checking and bounds validation
-
-## Development Environment
-
-This add-on includes a comprehensive development setup using Nix:
-
-```bash
-# Available development commands
-build-addon      # Build the add-on container with Podman
-run-addon        # Run add-on locally on port 7681
-lint-dockerfile  # Lint Dockerfile with hadolint
-test-endpoint    # Test web endpoint availability
-```
-
-**Requirements for development:**
-- NixOS or Nix package manager
-- Podman (automatically provided in dev shell)
-- Optional: direnv for automatic environment activation
+`amd64` and `aarch64`. armv7 is not supported (Bun has no musl build for it).
 
 ## Documentation
 
-For detailed usage instructions, see the [documentation](DOCS.md).
+See [DOCS.md](DOCS.md) for the full add-on docs, troubleshooting, and persistence details.
 
-## Version History
+## Development
 
-### v1.0.2 (Current) - Security & Bug Fix Release
-- 🔒 **CRITICAL**: Fixed dangerous filesystem operations
-- 🐛 Added missing armv7 architecture support
-- 🔧 Pinned NPM packages and improved error handling
-- 🛠️ Enhanced development environment with Podman support
+`nix develop` (or `direnv allow`) drops you into a shell with podman, hadolint, and a few aliases:
 
-### v1.0.1
-- Improved credential management
-- Enhanced startup reliability
+```bash
+build-addon       # podman build of the amd64 image
+run-addon         # run locally on :7681 with ./config mounted
+lint-dockerfile   # hadolint
+test-endpoint     # curl localhost:7681
+```
 
-### v1.0.0
-- Initial stable release
-- Web terminal interface with ttyd
-- Pre-installed Claude Code CLI
-- OAuth authentication support
-
-## Useful Links
-
-- [Claude Code Documentation](https://docs.anthropic.com/claude/docs/claude-code)
-- [Get an Anthropic API Key](https://console.anthropic.com/)
-- [Claude Code GitHub Repository](https://github.com/anthropics/claude-code)
-- [Home Assistant Add-ons](https://www.home-assistant.io/addons/)
+See `DEVELOPMENT.md` for the full workflow.
 
 ## Credits
 
-This add-on was created with the assistance of Claude Code itself! The development process, debugging, and documentation were all completed using Claude's AI capabilities - a perfect demonstration of what this add-on can help you accomplish.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+Originally forked from [heytcass/home-assistant-addons](https://github.com/heytcass/home-assistant-addons). The 2.0.0 rewrite collapses the previous credential-management and session-picker layers into a single `CLAUDE_CONFIG_DIR`-based persistence model.

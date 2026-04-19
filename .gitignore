@@ -33,3 +33,7 @@ dist/
 # Operating System Files
 .DS_Store
 Thumbs.db
+
+# Session scratch (memory + handoffs; local-only)
+.remember/
+.scratchpad/

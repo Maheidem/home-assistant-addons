@@ -1,162 +1,129 @@
 #!/usr/bin/with-contenv bashio
+# Claude Terminal — boot script.
+#
+# Responsibilities:
+#   1. Ensure persistent storage exists at /config/claude-config
+#   2. Seed a default settings.json on first boot (USE_BUILTIN_RIPGREP, DISABLE_AUTOUPDATER)
+#   3. Read the user's optional `startup_command` add-on option
+#   4. Launch ttyd → tmux. tmux's `-A` flag attaches to an existing session if there is one,
+#      so closing the browser leaves the session running and reopening reattaches.
+#
+# All Claude Code state (auth, MCP config, plugins, conversation history, channels)
+# lives under $CLAUDE_CONFIG_DIR which points at the persistent /config volume,
+# so it survives container restarts and add-on updates.
 
-# Initialize environment for Claude Code CLI
-init_environment() {
-    export HOME="/root"
-    export PATH="/root/.local/bin:$PATH"
+set -euo pipefail
 
-    # Ensure persistent storage directories exist
-    mkdir -p /config/claude-config/.claude
-    mkdir -p /config/claude-config/.ssh
-    mkdir -p /config/claude-config/.config-gh
-    chmod 755 /config/claude-config
-    chmod 700 /config/claude-config/.ssh
+CLAUDE_DIR=/config/claude-config
+DEFAULT_SETTINGS=/opt/claude-defaults/settings.json
 
-    # --- Symlink all user data into persistent volume ---
-    # Claude CLI
-    rm -rf /root/.claude
-    rm -f /root/.claude.json
-    ln -sf /config/claude-config/.claude /root/.claude
-    ln -sf /config/claude-config/.claude.json /root/.claude.json
+# --- Persistent storage ----------------------------------------------------
+mkdir -p "${CLAUDE_DIR}"
+chmod 700 "${CLAUDE_DIR}"
 
-    # Git config
-    rm -f /root/.gitconfig
-    ln -sf /config/claude-config/.gitconfig /root/.gitconfig
+if [ ! -f "${CLAUDE_DIR}/settings.json" ]; then
+    cp "${DEFAULT_SETTINGS}" "${CLAUDE_DIR}/settings.json"
+    bashio::log.info "Seeded default settings.json (USE_BUILTIN_RIPGREP=0, DISABLE_AUTOUPDATER=1)"
+fi
 
-    # SSH keys
-    rm -rf /root/.ssh
-    ln -sf /config/claude-config/.ssh /root/.ssh
-
-    # GitHub CLI auth
-    mkdir -p /root/.config
-    rm -rf /root/.config/gh
-    ln -sf /config/claude-config/.config-gh /root/.config/gh
-
-    # Bash history
-    rm -f /root/.bash_history
-    ln -sf /config/claude-config/.bash_history /root/.bash_history
-    touch /config/claude-config/.bash_history
-
-    # --- Restore permissions on existing auth files ---
-    if [ -f "/config/claude-config/.claude.json" ]; then
-        chmod 600 /config/claude-config/.claude.json
-        bashio::log.info "Restored existing Claude configuration"
-    fi
-
-    if [ -d "/config/claude-config/.claude" ]; then
-        find /config/claude-config/.claude -type f -exec chmod 600 {} \;
-        bashio::log.info "Restored existing Claude directory"
-    fi
-
-    if [ -d "/config/claude-config/.ssh" ]; then
-        find /config/claude-config/.ssh -type f -exec chmod 600 {} \;
-        bashio::log.info "Restored existing SSH keys"
-    fi
-
-    # Copy default Claude settings into persistent volume if not already present
-    if [ -f "/opt/claude-defaults/settings.json" ] && [ ! -f "/config/claude-config/.claude/settings.json" ]; then
-        cp /opt/claude-defaults/settings.json /config/claude-config/.claude/settings.json
-        bashio::log.info "Installed default Claude settings (USE_BUILTIN_RIPGREP=0)"
-    fi
-
-    bashio::log.info "Environment initialized — all user data persisted to /config/claude-config/"
+# --- Persist auxiliary user state -----------------------------------------
+# CLAUDE_CONFIG_DIR covers everything Claude Code writes. The four directories
+# below are NOT under Claude's control but are still "config the user set up"
+# (SSH keys for git push, gitconfig identity, GitHub CLI auth, shell history).
+# Symlink them into the persistent volume so they survive container restarts
+# and add-on updates.
+ensure_symlink() {
+    local src="$1" target="$2"
+    rm -rf "${src}" 2>/dev/null || true
+    ln -sf "${target}" "${src}"
 }
+mkdir -p "${CLAUDE_DIR}/ssh" "${CLAUDE_DIR}/config-gh" /root/.config
+chmod 700 "${CLAUDE_DIR}/ssh"
+touch "${CLAUDE_DIR}/gitconfig" "${CLAUDE_DIR}/bash_history"
+ensure_symlink /root/.ssh          "${CLAUDE_DIR}/ssh"
+ensure_symlink /root/.gitconfig    "${CLAUDE_DIR}/gitconfig"
+ensure_symlink /root/.config/gh    "${CLAUDE_DIR}/config-gh"
+ensure_symlink /root/.bash_history "${CLAUDE_DIR}/bash_history"
+# Tighten any keys the user has dropped into the persistent SSH dir.
+if [ -d "${CLAUDE_DIR}/ssh" ]; then
+    find "${CLAUDE_DIR}/ssh" -type f -exec chmod 600 {} \;
+fi
 
-# Setup session picker script
-setup_session_picker() {
-    # Copy session picker script from built-in location
-    if [ -f "/opt/scripts/claude-session-picker.sh" ]; then
-        if ! cp /opt/scripts/claude-session-picker.sh /usr/local/bin/claude-session-picker; then
-            bashio::log.error "Failed to copy claude-session-picker script"
-            exit 1
-        fi
-        chmod +x /usr/local/bin/claude-session-picker
-        bashio::log.info "Session picker script installed successfully"
-    else
-        bashio::log.warning "Session picker script not found, using auto-launch mode only"
-    fi
-}
+# --- Environment -----------------------------------------------------------
+# CLAUDE_CONFIG_DIR is the official knob for relocating Claude Code state.
+# Setting it here propagates through ttyd → bash → tmux → claude.
+export CLAUDE_CONFIG_DIR="${CLAUDE_DIR}"
+export HOME=/root
 
-# Determine Claude launch command based on configuration
-get_claude_launch_command() {
-    local auto_launch_claude
-    local persistent_sessions
+# --- Optional startup command ---------------------------------------------
+# Read once from the add-on options and export so the tmux wrapper script can read it.
+# Empty string (default) → plain bash. Otherwise → run the command then drop to bash.
+# Primary: bashio::config (queries the HA supervisor API).
+# Fallback: /data/options.json (always mounted by HA on boot, and the only
+# source available in local docker testing where the supervisor isn't reachable).
+STARTUP_CMD=$(bashio::config 'startup_command' '' 2>/dev/null || echo '')
+if [ -z "${STARTUP_CMD}" ] && [ -f /data/options.json ]; then
+    STARTUP_CMD=$(jq -r '.startup_command // ""' /data/options.json 2>/dev/null || echo '')
+fi
+export STARTUP_CMD
 
-    # Get configuration values
-    auto_launch_claude=$(bashio::config 'auto_launch_claude' 'true')
-    persistent_sessions=$(bashio::config 'persistent_sessions' 'true')
+if [ -n "${STARTUP_CMD}" ]; then
+    bashio::log.info "Startup command: ${STARTUP_CMD}"
+else
+    bashio::log.info "No startup command configured; tmux will launch a plain bash shell"
+fi
 
-    # Check if auto-session manager should be used
-    if [ "$persistent_sessions" = "true" ] && [ -f "/opt/scripts/auto-session-manager.sh" ]; then
-        # Use transparent session management (tmux-backed)
-        echo "/opt/scripts/auto-session-manager.sh"
-    elif [ "$auto_launch_claude" = "true" ]; then
-        # Auto-launch Claude in a tmux session for browser-reconnect persistence
-        echo "tmux new-session -A -s claude-main -c /config claude"
-    else
-        # Interactive session picker wrapped in tmux for browser-reconnect persistence
-        if [ -f /usr/local/bin/claude-session-picker ]; then
-            echo "tmux new-session -A -s claude-main -c /config /usr/local/bin/claude-session-picker"
-        else
-            # Fallback if session picker is missing
-            bashio::log.warning "Session picker not found, falling back to auto-launch"
-            echo "tmux new-session -A -s claude-main -c /config claude"
-        fi
-    fi
-}
+# --- Welcome banner --------------------------------------------------------
+# Written every boot (idempotent). Shown by interactive bash sessions on login.
+cat > /etc/profile.d/01-claude-terminal-welcome.sh <<'EOF'
+if [[ $- == *i* ]] && [ -z "${CLAUDE_TERMINAL_WELCOMED:-}" ]; then
+    export CLAUDE_TERMINAL_WELCOMED=1
+    cat <<'BANNER'
 
-# Start credential monitoring service
-start_credential_monitor() {
-    if [ -f "/opt/scripts/credential-monitor.sh" ]; then
-        bashio::log.info "Starting credential monitoring service..."
-        /opt/scripts/credential-monitor.sh &
-        MONITOR_PID=$!
-        bashio::log.info "Credential monitor started (PID: ${MONITOR_PID})"
-    else
-        bashio::log.warning "Credential monitor script not found"
-    fi
-}
+  Claude Terminal
+  ───────────────
+  Type `claude` to start Claude Code (you'll be prompted to log in on first run).
+  Closing the browser keeps your session alive — reopen to reattach.
+  Plugins, MCPs, skills you install persist under /config/claude-config/.
+  Set the `startup_command` add-on option to auto-launch on boot
+  (e.g. `claude -c --channels plugin:telegram@claude-plugins-official`).
 
-# Start main web terminal
-start_web_terminal() {
-    local port=7681
-    bashio::log.info "Starting web terminal on port ${port}..."
+BANNER
+fi
+EOF
 
-    # Log environment information for debugging
-    bashio::log.info "HOME=${HOME}"
+# --- Start tmux session at container boot ---------------------------------
+# This runs STARTUP_CMD at boot, BEFORE any browser is attached, so
+# always-on commands (e.g. `claude -c --channels plugin:telegram@...`) start
+# immediately and stay running even if the user never opens the web terminal.
+# `-d` creates the session detached. ttyd attaches to it later.
+if ! tmux has-session -t claude-main 2>/dev/null; then
+    tmux new-session -d -s claude-main -c /config /opt/tmux-session.sh
+    bashio::log.info "Started detached tmux session 'claude-main'"
+fi
 
-    # Start credential monitoring in background
-    start_credential_monitor
-
-    # Get the appropriate launch command based on configuration
-    local launch_command
-    launch_command=$(get_claude_launch_command)
-
-    # Log the configuration being used
-    local auto_launch_claude
-    auto_launch_claude=$(bashio::config 'auto_launch_claude' 'true')
-    bashio::log.info "Auto-launch Claude: ${auto_launch_claude}"
-
-    # Run ttyd web terminal
-    # --ping-interval 30: WebSocket keepalive to prevent silent drops
-    # --max-clients 1: single session per tmux design; prevents competing attachments
-    exec ttyd \
-        --port "${port}" \
-        --interface 0.0.0.0 \
-        --writable \
-        --ping-interval 30 \
-        --max-clients 1 \
-        bash -c "$launch_command"
-}
-
-# Main execution
-main() {
-    bashio::log.info "Initializing Claude Terminal add-on..."
-
-    init_environment
-    setup_session_picker
-    start_web_terminal
-}
-
-# Execute main function
-main "$@"
+# --- Launch web terminal ---------------------------------------------------
+# ttyd attaches to the existing tmux session on each browser connect.
+# `new-session -A` is create-or-attach: if the session died (rare; e.g. user
+# typed `exit` after STARTUP_CMD finished and tmux became empty), a fresh one
+# is created so the web terminal still works.
+bashio::log.info "Starting ttyd on port 7681"
+# ttyd client options (passed through to xterm.js):
+#   copyOnSelect=true → highlight text → auto-copies to clipboard (no Ctrl+C)
+#   cursorBlink=true  → visible cursor blink
+#   fontSize=14       → slightly larger than default 12px for readability
+#   scrollback=5000   → xterm.js scrollback lines (separate from tmux history)
+# Intentionally NOT setting fontFamily: xterm.js's default monospace stack
+# (courier new / courier / monospace) renders correctly; custom values with
+# commas / quoted family names broke letter spacing in practice.
+exec ttyd \
+    --port 7681 \
+    --interface 0.0.0.0 \
+    --writable \
+    --ping-interval 30 \
+    --max-clients 1 \
+    --client-option 'copyOnSelect=true' \
+    --client-option 'cursorBlink=true' \
+    --client-option 'fontSize=14' \
+    --client-option 'scrollback=5000' \
+    bash -lc 'tmux new-session -A -s claude-main -c /config /opt/tmux-session.sh'

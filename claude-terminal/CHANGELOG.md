@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.0.0
+
+Major rewrite focused on simplicity and a single, predictable persistence model. **Breaking changes** — see migration notes below.
+
+### Breaking changes
+- **Removed config options:** `auto_launch_claude` and `persistent_sessions`. Replaced by a single `startup_command` (string) option that lets you control exactly what runs in the tmux session at boot.
+- **Dropped armv7 architecture.** Bun (required by the official Telegram channel plugin and other modern Bun-based runtimes) does not ship a musl build for armv7. amd64 and aarch64 are still supported.
+- **Removed `claude-auth` and `claude-logout` helper scripts.** Use `claude /logout` and re-run `claude` instead — Claude Code's built-in OAuth flow is reliable on Alpine now and these wrappers were paving over a problem that no longer exists.
+
+### What changed under the hood
+- **Switched to Anthropic's official native installer** for Claude Code, landing at `/root/.local/bin/claude`. The image also switched to HA's **Debian (glibc) base** (`ghcr.io/home-assistant/{arch}-base-debian:bookworm`) — Alpine's musl (1.2.5) does not export `posix_getdents`, a symbol the native installer requires starting at 2.1.64+. Debian ships glibc, so the native installer works out of the box. System `ripgrep` plus `USE_BUILTIN_RIPGREP=0` remains the ripgrep story.
+- **`CLAUDE_CONFIG_DIR=/config/claude-config`** replaces the old symlinks for Claude Code's own state (`.claude`, `.claude.json`). Auxiliary user state (`.ssh`, `.gitconfig`, `.config/gh`, `.bash_history`) is still symlinked into the same persistent volume, so SSH keys for `git push`, your git identity, GitHub CLI auth, and shell history all carry over across restarts and add-on updates exactly as before.
+- **Auto-update disabled** inside the container (`DISABLE_AUTOUPDATER=1`). The image is the unit of update; bump the add-on to bump Claude Code.
+- **`run.sh` shrank from ~180 lines to ~50.** The session picker, auto-session manager, and credential monitor scripts were deleted — none were needed once the persistence model was simplified.
+- **tmux now starts detached at container boot**, not lazily on first browser attach. This is what makes `startup_command` a true always-on option: a value like `claude -c --channels plugin:telegram@claude-plugins-official` keeps the bot running 24/7 even if you never open the web terminal.
+- **Bun added to the image** so plugin runtimes that need it (Telegram channel, etc.) just work.
+
+### New features
+- **`startup_command` add-on option.** Set it to any shell command and it runs in the tmux session at boot. Empty (default) gives you a plain bash prompt. When the command exits, the tmux session falls through to bash so you can reconnect via the web terminal and recover.
+- **First-prompt welcome banner** with quick orientation, written into `/etc/profile.d/`.
+
+### Migration from 1.x
+- After updating, your existing `/config/claude-config/` directory works as-is. Auth, plugins, conversation history all carry over.
+- The two old options (`auto_launch_claude`, `persistent_sessions`) are silently ignored. To restore "Claude launches automatically", set `startup_command: claude` in the add-on configuration. To resume your most recent conversation on every boot, use `claude -c`.
+- If you were on an armv7 device, you can no longer install this add-on. Stay on 1.x or move to amd64/aarch64 hardware.
+
 ## 1.1.4
 
 ### 🧹 Maintenance

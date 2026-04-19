@@ -1,14 +1,15 @@
 name: "Claude Terminal"
 description: "Terminal interface for Anthropic's Claude Code CLI"
-version: "1.2.0"
+version: "2.0.0"
 slug: "claude_terminal"
 init: false
 
-# Supported architectures
+# Supported architectures.
+# armv7 is dropped: Bun (required by some plugin runtimes such as the official
+# Telegram channel) does not ship a musl build for armv7.
 arch:
   - aarch64
   - amd64
-  - armv7
 
 # External resources
 url: "https://github.com/anthropics/claude-code"
@@ -26,13 +27,23 @@ ports:
 ports_description:
   7681/tcp: "Web terminal (not required for ingress)"
 
-# Add-on configuration options
+# Add-on configuration options.
+# `startup_command` is the single user-tunable knob. When empty (default), the
+# tmux session opens a plain bash shell — type `claude` yourself, like a normal
+# terminal. When set, the command runs inside the tmux session at container boot
+# and stays running until it exits, regardless of whether the web terminal is open.
+# Useful values:
+#   ""                                                                  → plain bash (default)
+#   "claude"                                                            → auto-launch Claude
+#   "claude -c"                                                         → resume most recent conversation
+#   "claude -c --channels plugin:telegram@claude-plugins-official"      → always-on Telegram bot
+#
+# When the configured command exits, the tmux session falls through to a bash
+# prompt so you can reconnect via the web terminal and recover.
 options:
-  auto_launch_claude: true
-  persistent_sessions: true
+  startup_command: ""
 schema:
-  auto_launch_claude: bool?
-  persistent_sessions: bool?
+  startup_command: str?
 
 # Volume mapping for persistent storage
 map:

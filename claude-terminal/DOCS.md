@@ -1,74 +1,96 @@
 # Claude Terminal
 
-A terminal interface for Anthropic's Claude Code CLI in Home Assistant.
+A persistent web terminal for Home Assistant with Anthropic's Claude Code CLI pre-installed.
 
-## About
+## What it does
 
-This add-on provides a web-based terminal with Claude Code CLI pre-installed, allowing you to access Claude's powerful AI capabilities directly from your Home Assistant dashboard. The terminal provides full access to Claude's code generation, explanation, and problem-solving capabilities.
+Opens a terminal in your browser. Type `claude` to talk to Claude Code. Close the browser; the session keeps running. Reopen the add-on later and you're back exactly where you were.
+
+Plugins, MCP servers, skills, agents, settings, and conversation history all persist under `/config/claude-config/`.
 
 ## Installation
 
-1. Add this repository to your Home Assistant add-on store
-2. Install the Claude Terminal add-on
+1. Add this repository to your HA add-on store
+2. Install **Claude Terminal**
 3. Start the add-on
-4. Click "OPEN WEB UI" to access the terminal
-5. On first use, follow the OAuth prompts to log in to your Anthropic account
+4. Click **OPEN WEB UI**
+5. Type `claude` in the terminal — follow the OAuth browser prompts to log in
+6. Use it. Close the browser whenever. Come back whenever.
 
 ## Configuration
 
-No configuration is needed to get started. The add-on uses OAuth authentication — you will be prompted to log in to your Anthropic account the first time you use it.
+The add-on has one option: `startup_command`.
 
-Your OAuth credentials are stored in the `/config/claude-config` directory and persist across add-on updates and restarts, so you will not need to log in again.
+| Value | What happens |
+|---|---|
+| `""` (default) | Bash prompt opens. Type `claude` yourself when you want it. |
+| `claude` | Claude launches automatically every time the add-on starts. |
+| `claude -c` | Claude resumes your most recent conversation on every add-on start. |
+| `claude -c --channels plugin:telegram@claude-plugins-official` | Claude starts at boot with the Telegram channel active — your bot is reachable 24/7 even if you never open the web terminal. |
+| Any shell command | Free-form. Use it for anything you want auto-running in the tmux session. |
 
-### Options
+When the configured command exits (crash, `/exit`, container stop), the tmux session falls through to a bash prompt. Reopen the web terminal to recover and re-launch.
 
-| Option | Default | Description |
-|---|---|---|
-| `auto_launch_claude` | `true` | Automatically start Claude when the terminal opens. Set to `false` to show an interactive session picker. |
-| `persistent_sessions` | `true` | Keep the terminal session alive when you close the browser tab. Reconnecting resumes where you left off. |
+### First-time setup for `startup_command`
 
-> **Note:** `persistent_sessions` persists across browser disconnects only. Restarting the add-on will start a fresh session.
+The first time you install the add-on, leave `startup_command` empty. Open the web terminal, run `claude`, log in via OAuth, install any plugins you want (e.g. `/plugin install telegram@claude-plugins-official`), and configure them. Then go to the add-on configuration, set `startup_command` to whatever you want auto-run on boot, and restart the add-on.
 
-> **Note:** Only one persistent session is supported at a time. If multiple users connect simultaneously, they will share the same terminal session.
+If you set `startup_command` before logging in, the command will fail (no credentials), and the tmux session will drop to a bash prompt. Recover by opening the web terminal and running `claude` manually to log in.
 
-## Access
+## Persistence
 
-This add-on is restricted to **Home Assistant admin users only**. Non-admin accounts will not see it in the sidebar.
+Everything Claude Code writes is under `/config/claude-config/`:
 
-## Usage
+- `.credentials.json` — your OAuth tokens
+- `settings.json` — your settings
+- `projects/` — conversation history (this is what `claude -c` reads)
+- `plugins/` — installed plugins, including their dependencies
+- `channels/` — channel state (Telegram bot token, allowlist, etc.)
+- `agents/`, `skills/`, `hooks/`, `commands/`, etc.
 
-Claude launches automatically when you open the terminal. You can also start Claude manually with:
+Auxiliary user state lives in the same directory:
 
-```bash
-claude
-```
+- `ssh/` — your SSH keys (so `git push` works across restarts)
+- `gitconfig` — your git identity
+- `config-gh/` — GitHub CLI auth
+- `bash_history` — your shell history
 
-### Common Commands
+This whole directory is the HA `/config` share, so everything survives container restarts, host reboots, and add-on updates. Do not delete it unless you want to start over.
 
-- `claude` - Start a new interactive Claude session
-- `claude -c` - Continue the most recent conversation
-- `claude -r` - Resume a previous conversation from a list
-- `claude -p "your prompt"` - Ask Claude a single question (non-interactive)
-- `claude --help` - See all available commands and flags
+## What ships in the container
 
-The terminal starts directly in your `/config` directory, giving you immediate access to all your Home Assistant configuration files. This makes it easy to get help with your configuration, create automations, and troubleshoot issues.
+- **Claude Code** — pinned version (see `CHANGELOG.md` for the current pin), installed via Anthropic's official native installer. Auto-updates are disabled inside the container; bump by updating the add-on.
+- **Bun** — needed by some plugin runtimes (e.g. the official Telegram channel).
+- **Node.js + npm** — for general-purpose dev work (not required by Claude itself with the native installer).
+- **git, github-cli, openssh-client** — for working with repos from the terminal.
+- **tmux** — keeps your session alive across browser closes.
+- **ttyd** — the web terminal itself.
+- **ripgrep, jq, yq-go, python3, nano, tree** — common CLI tools.
 
-## Features
+## Architectures supported
 
-- **Web Terminal**: Access a full terminal environment via your browser
-- **Auto-Launching**: Claude starts automatically when you open the terminal
-- **Claude AI**: Access Claude's AI capabilities for programming, troubleshooting and more
-- **Direct Config Access**: Terminal starts in `/config` for immediate access to all Home Assistant files
-- **Simple Setup**: Uses OAuth for easy authentication
-- **Home Assistant Integration**: Access directly from your dashboard
+`amd64` and `aarch64`. Sufficient for all modern HA installs (NUCs, mini PCs, Raspberry Pi 4/5).
+
+`armv7` (Pi 3 and older) is **not supported** because Bun does not ship a musl build for it, and Bun is needed by the Telegram channel plugin and other modern plugins.
+
+## Access control
+
+This add-on is restricted to **Home Assistant admin users only** (`panel_admin: true`). The add-on has read/write access to `/config` and read access to `/addons`. Treat anyone with admin access to your HA as having shell access to your config directory.
+
+If you set `startup_command` to something that exposes Claude over a network (e.g. the Telegram channel), be sure to lock down the channel's allowlist. The Telegram plugin has a built-in pairing flow — see its README at <https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/telegram>.
 
 ## Troubleshooting
 
-- If Claude doesn't start automatically, try running `claude` manually in the terminal
-- If you see permission errors, try restarting the add-on
-- If you have authentication issues, try logging out and back in
-- Check the add-on logs for any error messages
+**The terminal is blank or stuck.** Refresh the browser; ttyd reattaches to the live tmux session. If still stuck, restart the add-on.
 
-## Credits
+**Claude says "not logged in".** Run `claude /logout` then `claude` again to re-authenticate via OAuth.
 
-This add-on was created with the assistance of Claude Code itself! The development process, debugging, and documentation were all completed using Claude's AI capabilities - a perfect demonstration of what this add-on can help you accomplish.
+**Telegram plugin errors with HTTP 409.** A stale Bun process is holding the Telegram polling connection. Restart the add-on (kills all processes, lets the plugin reclaim the lock).
+
+**`startup_command` doesn't take effect.** The command is read at container boot. After changing it in the add-on configuration, you must **restart the add-on** for the new value to apply. Saving the config alone is not enough.
+
+**Plugin installs disappear after restart.** They shouldn't. Verify `/config/claude-config/plugins/` exists and has files. If empty, the persistent volume is not mounting correctly — check the add-on's `map:` configuration or your HA storage setup.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) in this directory.
