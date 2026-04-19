@@ -88,6 +88,11 @@ ensure_symlink /root/.ssh          "${CLAUDE_DIR}/ssh"
 ensure_symlink /root/.gitconfig    "${CLAUDE_DIR}/gitconfig"
 ensure_symlink /root/.config/gh    "${CLAUDE_DIR}/config-gh"
 ensure_symlink /root/.bash_history "${CLAUDE_DIR}/bash_history"
+# Symlink ~/.claude → persistent volume. CLAUDE_CONFIG_DIR (set below) redirects
+# Claude Code's own reads/writes, but plugins and channels (e.g. the Telegram
+# bot — a separate bun process) use the literal $HOME/.claude path and don't
+# honour the env var. The symlink makes both paths land on persistent storage.
+ensure_symlink /root/.claude       "${CLAUDE_DIR}"
 # Tighten any keys the user has dropped into the persistent SSH dir.
 if [ -d "${CLAUDE_DIR}/ssh" ]; then
     find "${CLAUDE_DIR}/ssh" -type f -exec chmod 600 {} \;

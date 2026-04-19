@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.2
+
+Bug-fix release. No breaking changes.
+
+### Fixed
+- **Telegram channel tokens (and any other plugin state under `~/.claude/`) now persist.** `CLAUDE_CONFIG_DIR=/config/claude-config` redirects Claude Code's own reads/writes, but plugins and channels (e.g. the bun-based Telegram bot) use the literal `$HOME/.claude/` path and don't honour the env var. `~/.claude/` was on the ephemeral container filesystem, so plugin state vanished on restart. Fixed by symlinking `/root/.claude` → `/config/claude-config/` so both paths resolve to the same persistent volume.
+
+### Upgrade notes
+- Anything you had previously configured under `~/.claude/` that wasn't accessed via `CLAUDE_CONFIG_DIR` (Telegram bot token, any plugin state) was lost when you last restarted. Re-configure once on 2.0.2; it will stick from then on.
+
 ## 2.0.1
 
 Bug-fix release. No breaking changes.

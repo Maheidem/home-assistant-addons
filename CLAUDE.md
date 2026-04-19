@@ -27,20 +27,23 @@ Full hot-reload, multi-port, and debugging recipes live in `DEVELOPMENT.md`.
 export CLAUDE_CONFIG_DIR=/config/claude-config
 ```
 
-This is the **official** knob ([env-vars docs](https://code.claude.com/docs/en/env-vars)) for relocating Claude Code state. Auth, MCP config, plugins, channels, conversation history, agents, skills, hooks, commands — everything Claude Code, plugins, or MCP servers write — lands under that directory, which is the persistent HA `/config` volume. So it survives container restarts, host reboots, and add-on updates.
+This is the **official** knob ([env-vars docs](https://code.claude.com/docs/en/env-vars)) for relocating Claude Code state. Claude Code itself honours it for auth, MCP config, conversation history, agents, skills, hooks, commands, etc. — everything lands under that directory, on the persistent HA `/config` volume.
 
-### Auxiliary state still uses symlinks
+### Symlinks still needed
 
-`CLAUDE_CONFIG_DIR` covers Claude Code itself, but does nothing for SSH keys, `.gitconfig`, GitHub CLI auth, or shell history — and those are also "config the user set up" that should persist (e.g. SSH keys for `git push` from inside Claude). `run.sh` symlinks four paths into the same persistent volume:
+The env var only affects Claude Code's own process. Plugins, channels, and other out-of-process helpers (e.g. the bun-based Telegram channel) use the literal `$HOME/.claude/` path and do **not** honour `CLAUDE_CONFIG_DIR`. Similarly, SSH keys, `.gitconfig`, GitHub CLI auth, and shell history are not Claude Code's problem at all, but they're "config the user set up" and should persist too. `run.sh` symlinks five paths into the persistent volume:
 
 | Symlink | Target |
 |---|---|
+| `/root/.claude` | `/config/claude-config` (same dir `CLAUDE_CONFIG_DIR` points at — makes plugin/channel state persist regardless of whether they honour the env var) |
 | `/root/.ssh` | `/config/claude-config/ssh` (chmod 700, files 600) |
 | `/root/.gitconfig` | `/config/claude-config/gitconfig` |
 | `/root/.config/gh` | `/config/claude-config/config-gh` |
 | `/root/.bash_history` | `/config/claude-config/bash_history` |
 
-These four are the **only** symlinks left from the old design — they are not redundant with `CLAUDE_CONFIG_DIR`.
+The `/root/.claude` symlink is deliberately redundant with `CLAUDE_CONFIG_DIR`: when both are in place, Claude Code, plugins, and channels all converge on the same persistent directory, whatever code path they use to discover it.
+
+Claude's native installer directory (`/root/.local/share/claude/versions/`) is also symlinked, into `/config/claude-config/claude-installations/`, so manual `claude install X` and auto-updates persist across add-on restarts. On every boot, `run.sh` re-points `/root/.local/bin/claude` at the newest installed version.
 
 ### Launch flow
 
