@@ -52,10 +52,47 @@ Auxiliary user state lives in the same directory:
 
 - `ssh/` — your SSH keys (so `git push` works across restarts)
 - `gitconfig` — your git identity
-- `config-gh/` — GitHub CLI auth
+- `dot-config/` — everything under `~/.config/` (GitHub CLI, npm, aws, gcloud, fly, anything)
 - `bash_history` — your shell history
+- `claude-installations/` — Claude Code binaries (versions from `claude install X` and auto-updater both land here)
 
 This whole directory is the HA `/config` share, so everything survives container restarts, host reboots, and add-on updates. Do not delete it unless you want to start over.
+
+## Customizing your environment
+
+Three persistent hooks let you tune the shell, tmux, and container startup without editing anything inside the container (changes there are lost on restart):
+
+### `/config/claude-config/bashrc.local`
+Any shell aliases, env vars, functions, or PS1 tweaks. Sourced by every interactive bash session on top of the defaults.
+
+```bash
+# example contents
+alias k=kubectl
+export EDITOR=vim
+export PROMPT_COMMAND='history -a'
+```
+
+### `/config/claude-config/tmux.conf.local`
+tmux overrides. Sourced by the default `~/.tmux.conf` if the file exists.
+
+```tmux
+# example contents
+set -g status on
+bind r source-file ~/.tmux.conf \; display "Reloaded!"
+```
+
+### `/config/claude-config/init.sh`
+Runs once at container boot (from `run.sh`). Good for custom symlinks, one-off exports, starting background helpers — anything shell-scriptable. Runs with `set -euo pipefail` inherited from `run.sh`; non-zero exit is logged but non-fatal.
+
+```bash
+#!/bin/bash
+# example contents: symlink an extra config dir
+ln -sfn /config/claude-config/my-stuff /root/.my-stuff
+export MY_CUSTOM_VAR=hello
+```
+
+### Claude Code versions
+Run `claude install X.Y.Z` inside the terminal to install a specific version — it writes to `/config/claude-config/claude-installations/versions/` and sticks across restarts. On every boot, the newest installed version is activated. To pin at a specific version, set `"DISABLE_AUTOUPDATER": "1"` inside the `env` object in `settings.json`.
 
 ## What ships in the container
 

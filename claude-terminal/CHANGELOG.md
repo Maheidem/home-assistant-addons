@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.0.3
+
+Persist everything a user typically customizes. No breaking changes (auto-migrates from 2.0.x).
+
+### Persisted automatically
+- **`/root/.config/` wholesale** — any CLI that stores config under `~/.config/` (gh, npm, aws, gcloud, fly, etc.) now persists in `/config/claude-config/dot-config/` without extra setup.
+- **Migration:** existing `/config/claude-config/config-gh/` is moved into `dot-config/gh/` on first 2.0.3 boot; your GitHub CLI auth carries over unchanged.
+
+### New persistent hooks for customization
+Drop files in `/config/claude-config/` and they're picked up on every boot:
+
+- **`bashrc.local`** — shell aliases, env vars, functions, PS1 tweaks. Sourced by every interactive bash session on top of the defaults.
+- **`tmux.conf.local`** — tmux overrides. Sourced by the default `~/.tmux.conf` if the file exists.
+- **`init.sh`** — arbitrary shell run once at container boot (from `run.sh`). Great for custom symlinks, one-off exports, starting background helpers. Failures are logged but non-fatal.
+
+See `DOCS.md` for examples.
+
+### Welcome banner
+Updated to summarize what's persistent and where to customize.
+
 ## 2.0.2
 
 Bug-fix release. No breaking changes.

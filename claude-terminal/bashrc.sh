@@ -48,3 +48,11 @@ if [ -f /etc/bash/bash_completion.sh ]; then
 elif [ -f /usr/share/bash-completion/bash_completion ]; then
     . /usr/share/bash-completion/bash_completion
 fi
+
+# --- User bash overrides (persistent) ---------------------------------------
+# Drop your own aliases, exports, functions, PS1 tweaks, etc. in
+# /config/claude-config/bashrc.local and they'll be sourced on every shell.
+# File survives add-on restarts and updates.
+if [ -f /config/claude-config/bashrc.local ]; then
+    . /config/claude-config/bashrc.local
+fi

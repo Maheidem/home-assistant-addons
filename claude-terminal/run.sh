@@ -81,12 +81,23 @@ ensure_symlink() {
     rm -rf "${src}" 2>/dev/null || true
     ln -sf "${target}" "${src}"
 }
-mkdir -p "${CLAUDE_DIR}/ssh" "${CLAUDE_DIR}/config-gh" /root/.config
+# One-time migration: 2.0.x kept `gh` auth in config-gh/; move into dot-config/
+# so the broader /root/.config symlink below picks it up.
+if [ -d "${CLAUDE_DIR}/config-gh" ] && [ ! -e "${CLAUDE_DIR}/dot-config/gh" ]; then
+    mkdir -p "${CLAUDE_DIR}/dot-config"
+    mv "${CLAUDE_DIR}/config-gh" "${CLAUDE_DIR}/dot-config/gh"
+    bashio::log.info "Migrated gh config to dot-config/gh"
+fi
+
+mkdir -p "${CLAUDE_DIR}/ssh" "${CLAUDE_DIR}/dot-config"
 chmod 700 "${CLAUDE_DIR}/ssh"
 touch "${CLAUDE_DIR}/gitconfig" "${CLAUDE_DIR}/bash_history"
 ensure_symlink /root/.ssh          "${CLAUDE_DIR}/ssh"
 ensure_symlink /root/.gitconfig    "${CLAUDE_DIR}/gitconfig"
-ensure_symlink /root/.config/gh    "${CLAUDE_DIR}/config-gh"
+# Broad ~/.config symlink: covers gh, npm, aws, gcloud, fly, and any future
+# CLI that stores config under ~/.config. One symlink, rather than chasing
+# each tool individually.
+ensure_symlink /root/.config       "${CLAUDE_DIR}/dot-config"
 ensure_symlink /root/.bash_history "${CLAUDE_DIR}/bash_history"
 # Symlink ~/.claude → persistent volume. CLAUDE_CONFIG_DIR (set below) redirects
 # Claude Code's own reads/writes, but plugins and channels (e.g. the Telegram
@@ -133,13 +144,30 @@ if [[ $- == *i* ]] && [ -z "${CLAUDE_TERMINAL_WELCOMED:-}" ]; then
   ───────────────
   Type `claude` to start Claude Code (you'll be prompted to log in on first run).
   Closing the browser keeps your session alive — reopen to reattach.
-  Plugins, MCPs, skills you install persist under /config/claude-config/.
+
+  Everything persists in /config/claude-config/:
+    • Claude state, plugins, channels, skills, MCP servers, auth
+    • SSH keys, git identity, GitHub CLI, shell history
+    • /root/.config, /root/.claude — wholesale
+    • Your custom init: bashrc.local, tmux.conf.local, init.sh (see DOCS.md)
+
   Set the `startup_command` add-on option to auto-launch on boot
   (e.g. `claude -c --channels plugin:telegram@claude-plugins-official`).
 
 BANNER
 fi
 EOF
+
+# --- User init hook -------------------------------------------------------
+# If /config/claude-config/init.sh exists, source it. Lets users run
+# arbitrary shell at boot — extra symlinks, exports, one-off setup.
+# Non-fatal on failure so a broken hook can't block the container.
+USER_INIT="${CLAUDE_DIR}/init.sh"
+if [ -f "${USER_INIT}" ]; then
+    bashio::log.info "Running user init hook: ${USER_INIT}"
+    # shellcheck disable=SC1090
+    . "${USER_INIT}" || bashio::log.warning "User init hook exited non-zero (ignored)"
+fi
 
 # --- Start tmux session at container boot ---------------------------------
 # This runs STARTUP_CMD at boot, BEFORE any browser is attached, so

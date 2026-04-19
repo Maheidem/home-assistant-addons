@@ -38,12 +38,23 @@ The env var only affects Claude Code's own process. Plugins, channels, and other
 | `/root/.claude` | `/config/claude-config` (same dir `CLAUDE_CONFIG_DIR` points at — makes plugin/channel state persist regardless of whether they honour the env var) |
 | `/root/.ssh` | `/config/claude-config/ssh` (chmod 700, files 600) |
 | `/root/.gitconfig` | `/config/claude-config/gitconfig` |
-| `/root/.config/gh` | `/config/claude-config/config-gh` |
+| `/root/.config` | `/config/claude-config/dot-config` (wholesale — covers gh, npm, aws, gcloud, fly, etc.) |
 | `/root/.bash_history` | `/config/claude-config/bash_history` |
+| `/root/.local/share/claude` | `/config/claude-config/claude-installations` (so `claude install X` and auto-updates stick; `run.sh` also re-points `/root/.local/bin/claude` at the newest installed version on every boot) |
 
-The `/root/.claude` symlink is deliberately redundant with `CLAUDE_CONFIG_DIR`: when both are in place, Claude Code, plugins, and channels all converge on the same persistent directory, whatever code path they use to discover it.
+The `/root/.claude` symlink is deliberately redundant with `CLAUDE_CONFIG_DIR`: when both are in place, Claude Code, plugins, and channels all converge on the same persistent directory, whatever code path they use to discover it. The `/root/.config` symlink was broadened from a gh-only version in 2.0.3; `run.sh` one-time-migrates `/config/claude-config/config-gh/` → `/config/claude-config/dot-config/gh/` to preserve existing GitHub CLI auth.
 
-Claude's native installer directory (`/root/.local/share/claude/versions/`) is also symlinked, into `/config/claude-config/claude-installations/`, so manual `claude install X` and auto-updates persist across add-on restarts. On every boot, `run.sh` re-points `/root/.local/bin/claude` at the newest installed version.
+### User customization hooks
+
+Three optional files under `/config/claude-config/` let users tune their environment without modifying anything inside the container (which would be lost on restart):
+
+| File | Loaded by | Purpose |
+|---|---|---|
+| `bashrc.local` | `/etc/profile.d/02-claude-terminal-bash.sh` | shell aliases, exports, PS1 overrides |
+| `tmux.conf.local` | `/root/.tmux.conf` via `source-file` | tmux overrides |
+| `init.sh` | `run.sh` via `.` (source) | arbitrary boot-time shell (custom symlinks, background helpers, etc.) |
+
+`init.sh` failures are logged but non-fatal so a broken hook can't block the container from starting.
 
 ### Launch flow
 
