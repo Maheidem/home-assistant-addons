@@ -2,6 +2,17 @@
 
 All notable changes to this add-on. Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.2] - 2026-04-24
+
+### Fixed
+
+- `/init: Permission denied` still occurred on 1.0.1. Root cause: commenting out `apparmor: true` in config.yaml does not disable AppArmor — HA's default is `apparmor: true`, and the supervisor auto-loads `apparmor.txt` from the add-on folder whenever one is present. The 1.0.0 profile was therefore still being applied.
+
+### Changed
+
+- `config.yaml` now sets `apparmor: false` explicitly.
+- `apparmor.txt` removed from the add-on folder so no profile can be auto-loaded. Matches `claude-terminal`, which ships without an apparmor.txt at all. Will return in a future version with a properly-tested profile.
+
 ## [1.0.1] - 2026-04-24
 
 ### Fixed

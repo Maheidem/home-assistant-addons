@@ -1,6 +1,6 @@
 name: "OpenCode"
 description: "OpenCode web UI — a coding agent you drive from the Home Assistant dashboard"
-version: "1.0.1"
+version: "1.0.2"
 slug: "opencode_terminal"
 init: false
 
@@ -70,11 +70,14 @@ schema:
 map:
   - addon_config:rw
 
-# AppArmor is intentionally off for 1.0.x. The 1.0.0 starter profile was
+# AppArmor is explicitly disabled for 1.0.x. The 1.0.0 starter profile was
 # too restrictive — blocked execution of /init (the s6-overlay entrypoint).
-# Shipping unconfined matches claude-terminal until we have a field-tested
-# profile. Planned for a future minor version.
-# apparmor: true
+# HA's default is `apparmor: true`, which auto-loads apparmor.txt if the
+# file exists in the add-on folder, so we must set `false` AND remove the
+# file. Shipping unconfined matches claude-terminal (which has no
+# apparmor.txt). Planned for a future minor version once a field-tested
+# profile exists.
+apparmor: false
 
 # Service startup configuration
 startup: services
