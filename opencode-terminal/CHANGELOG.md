@@ -2,6 +2,16 @@
 
 All notable changes to this add-on. Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.1] - 2026-04-24
+
+### Fixed
+
+- Container failed to start with `cannot open /init: Permission denied`. Root cause: the 1.0.0 AppArmor starter profile did not whitelist `/init` (the s6-overlay entrypoint the HA Debian base uses as PID 1). Shipped as complain-mode in the plan, but HA applied it in enforce mode in practice.
+
+### Changed
+
+- AppArmor disabled (`apparmor: true` → commented out in `config.yaml`). The profile file (`apparmor.txt`) is kept in-tree as a starting point for a future version but not currently loaded. This matches `claude-terminal` (which ships unconfined).
+
 ## [1.0.0] - 2026-04-24
 
 Initial release. Sibling to `claude-terminal`, fully independent.
