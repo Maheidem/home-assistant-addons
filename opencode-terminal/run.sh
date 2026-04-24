@@ -152,12 +152,15 @@ read_option() {
 }
 
 # Export non-empty secrets as env vars. Users reference them from opencode.json
-# with `{env:ZHIPU_API_KEY}`, etc.
-for key in zhipu_api_key anthropic_api_key openai_api_key waha_api_key waha_api_url; do
+# with `{env:ZHIPU_API_KEY}`, etc. server_password maps to the well-known
+# OPENCODE_SERVER_PASSWORD variable opencode web reads to gate HTTP basic auth.
+for key in server_password zhipu_api_key anthropic_api_key openai_api_key waha_api_key waha_api_url; do
     val=$(read_option "${key}")
     if [ -n "${val}" ]; then
         # Convert snake_case → SHOUTY_SNAKE_CASE for env-var convention.
         ename=$(echo "${key}" | tr '[:lower:]' '[:upper:]')
+        # Special-case: opencode expects OPENCODE_SERVER_PASSWORD.
+        [ "${ename}" = "SERVER_PASSWORD" ] && ename=OPENCODE_SERVER_PASSWORD
         export "${ename}=${val}"
         bashio::log.info "Exported ${ename} from add-on options"
     fi

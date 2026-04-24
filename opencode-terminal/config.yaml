@@ -1,6 +1,6 @@
 name: "OpenCode"
 description: "OpenCode web UI — a coding agent you drive from the Home Assistant dashboard"
-version: "1.0.2"
+version: "1.0.3"
 slug: "opencode_terminal"
 init: false
 
@@ -17,18 +17,28 @@ url: "https://opencode.ai"
 # Web interface configuration
 ingress: true
 ingress_port: 7682
+ingress_stream: true
 panel_icon: mdi:code-tags
 panel_title: "OpenCode"
 panel_admin: true
 
 # Port configuration.
-# Unlike claude-terminal, we don't expose the port host-side by default — the
-# web UI is meant to be reached via HA ingress. Users who want direct access
-# can remap the port through the HA UI.
+# Port 7682 is exposed host-side by default because OpenCode's web UI uses
+# absolute asset paths (<script src="/assets/...">), which break behind HA
+# ingress's subpath proxy. OpenCode has no --base-path flag. Until upstream
+# adds one, use the direct URL: http://<hass-ip>:7682/
+#
+# SECURITY: without OPENCODE_SERVER_PASSWORD set (see server_password
+# option below), the exposed port is UNAUTHENTICATED. Only expose on
+# trusted networks, or set server_password.
+#
+# Clicking "OPEN WEB UI" in the HA dashboard uses ingress and will show a
+# blank page until upstream adds base-path support — this is a known
+# limitation, tracked in opencode-terminal/DOCS.md.
 ports:
-  7682/tcp: null
+  7682/tcp: 7682
 ports_description:
-  7682/tcp: "OpenCode web UI (not required when using ingress)"
+  7682/tcp: "OpenCode web UI (use http://<hass-ip>:7682 until HA ingress gains base-path support)"
 
 # Add-on options.
 # Secrets are declared as top-level fields so HA renders them as password
@@ -40,6 +50,7 @@ ports_description:
 # five. One KEY=VALUE per line.
 options:
   log_level: info
+  server_password: ""
   zhipu_api_key: ""
   anthropic_api_key: ""
   openai_api_key: ""
@@ -50,6 +61,10 @@ schema:
   # OpenCode's valid levels are DEBUG|INFO|WARN|ERROR (opencode web --help).
   # We take them lowercase here and upcase in run.sh before passing through.
   log_level: list(debug|info|warn|error)
+  # When set, opencode web enforces HTTP basic auth using this password.
+  # Strongly recommended if you access the add-on via the direct port
+  # (http://<hass-ip>:7682), since HA ingress's auth does not apply there.
+  server_password: password?
   zhipu_api_key: password?
   anthropic_api_key: password?
   openai_api_key: password?

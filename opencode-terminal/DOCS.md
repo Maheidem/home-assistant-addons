@@ -187,10 +187,16 @@ Check the add-on **Log** tab for errors. Common causes:
 
 ### Ingress / subpath asset routing
 
-OpenCode's web UI has no `--base-path` flag. HA ingress rewrites paths transparently for you, but if a specific asset fails to load behind ingress (showing a 404 for something like `/assets/foo.js`), that's likely an upstream OpenCode bug. Workarounds:
+**Known limitation, current as of v1.0.3.** OpenCode's web UI emits HTML with absolute asset paths (`<link href="/favicon..."`, `<script src="/assets/...">`), and the binary has no `--base-path` flag or `OPENCODE_BASE_PATH` env var. Behind HA ingress — which serves the add-on at `/api/hassio_ingress/<token>/` — the HTML loads fine but all the `/assets/...` URLs resolve to `https://<ha>:8123/assets/...` (outside ingress) and return 404. Result: blank page.
 
-1. **Access via direct port.** Remap the port in the add-on's Network tab to expose `7682` to your LAN, then hit `http://<hass-ip>:7682/` directly (no ingress). Bypasses the subpath issue entirely. Note: **no authentication** on direct-port access — only do this on a trusted network.
-2. File an issue at [github.com/anomalyco/opencode](https://github.com/anomalyco/opencode) and link the add-on in the report.
+**What we ship:**
+
+- Port 7682 is exposed on the Docker host by default, so **use the direct URL `http://<hass-ip>:7682/`** in a browser tab. This bypasses HA ingress entirely.
+- The add-on supports an optional `server_password` option. When set, OpenCode enforces HTTP basic auth on every request (`opencode` is the username). **Strongly recommended** because direct port access does NOT go through HA's auth.
+
+**If you need ingress to work** (want the HA sidebar button to show the UI), the only real fix is upstream — opencode needs a `--base-path` flag. Track / upvote / file: [github.com/anomalyco/opencode](https://github.com/anomalyco/opencode).
+
+**If you want to block access from outside your LAN**: the HA Network tab lets you remove the host-side port mapping (set it blank). The add-on will still work, but only other containers on the same Docker network can reach it.
 
 ### MCP server won't auth
 

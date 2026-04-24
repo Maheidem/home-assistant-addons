@@ -2,6 +2,22 @@
 
 All notable changes to this add-on. Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.3] - 2026-04-24
+
+### Fixed
+
+- Sidebar "OPEN WEB UI" showed a blank page. Root cause: OpenCode's web UI uses absolute asset paths (`<script src="/assets/app.js">`) and has no `--base-path` flag. HA ingress passes requests through at a subpath (`/api/hassio_ingress/<token>/`), so the HTML loads but every asset and XHR resolves to `https://<ha>:8123/assets/…` outside ingress and 404s. This is a known upstream limitation ([anomalyco/opencode](https://github.com/anomalyco/opencode)) — the binary has no `HASSIO`/`X-Ingress`/`URL_PREFIX` strings at all.
+
+### Changed — **action required**
+
+- Port `7682` is now exposed host-side by default. **Use `http://<hass-ip>:7682/` directly** until upstream adds base-path support. Clicking "OPEN WEB UI" through the HA sidebar will still show a blank page (we can't fix this without upstream changes).
+- New `server_password` option (password field). When set, OpenCode enforces HTTP basic auth on every request. **Strongly recommended** because direct port access bypasses HA ingress's auth layer.
+- `ingress_stream: true` added so streaming responses (chat token stream, tool output) pass through HA cleanly if/when ingress works.
+
+### Known limitation
+
+- HA sidebar panel still shows blank. Tracked as "needs upstream opencode base-path support" — see DOCS.md Troubleshooting section.
+
 ## [1.0.2] - 2026-04-24
 
 ### Fixed

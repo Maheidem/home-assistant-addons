@@ -4,6 +4,13 @@ configuration:
     description: >-
       OpenCode's logging verbosity. `debug` for diagnosing boot issues,
       `info` for normal use. Accepts debug / info / warn / error.
+  server_password:
+    name: Server password
+    description: >-
+      Optional. When set, OpenCode requires HTTP basic auth with this
+      password. Strongly recommended if you reach the UI via the direct
+      port (http://<hass-ip>:7682) — HA ingress's built-in auth does not
+      apply there.
   zhipu_api_key:
     name: Zhipu / GLM API key
     description: >-

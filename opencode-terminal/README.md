@@ -13,10 +13,12 @@ Run [OpenCode](https://opencode.ai) — an open-source AI coding agent — from 
 ## Quick start
 
 1. Install the add-on from your HA add-on store.
-2. Click **Configuration** and paste any provider API keys you use (Zhipu, Anthropic, OpenAI, etc.).
+2. Click **Configuration**, paste any provider API keys you use (Zhipu, Anthropic, OpenAI, etc.), and set a **server_password**.
 3. Click **Start**. Wait for the log to show `Starting OpenCode web on 0.0.0.0:7682`.
-4. Click **OPEN WEB UI** in the sidebar.
+4. Open **`http://<hass-ip>:7682/`** in a new browser tab. Enter `opencode` as the user and your `server_password` when prompted.
 5. OpenCode will prompt you to finish any provider setup. Once done, start a session.
+
+> ⚠️ **The HA sidebar "OPEN WEB UI" button is currently broken** — it shows a blank page. OpenCode has no base-path support, so HA ingress can't proxy it correctly. Use the direct port URL above until upstream adds `--base-path`. See [DOCS.md](DOCS.md#ingress--subpath-asset-routing) for details.
 
 ## Customising `opencode.json`
 
