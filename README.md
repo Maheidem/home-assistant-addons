@@ -1,36 +1,54 @@
-# Claude Terminal for Home Assistant
+# AI coding agents for Home Assistant
 
-This repository ships a single Home Assistant add-on: **Claude Terminal**, a persistent web terminal with Anthropic's Claude Code CLI pre-installed. Open it from your HA dashboard, type `claude`, log in. Close the browser; your session keeps running. Reopen it later — you're back where you left off.
+This repository ships two independent Home Assistant add-ons, each wrapping a different open-source AI coding agent:
 
-This is an enhanced fork of [heytcass/home-assistant-addons](https://github.com/heytcass/home-assistant-addons). The 2.0.0 rewrite collapses the previous credential-management and session-picker layers into a single `CLAUDE_CONFIG_DIR`-based persistence model and exposes one user-tunable `startup_command` option that supports always-on patterns like running Claude Code with the official Telegram channel.
+| Add-on | What it wraps | Primary surface | Ingress port |
+|---|---|---|---|
+| **[Claude Terminal](claude-terminal/)** | Anthropic's Claude Code CLI | Web terminal (ttyd + tmux) | 7681 |
+| **[OpenCode](opencode-terminal/)** | [OpenCode](https://opencode.ai) by Anomaly | `opencode web` (HTTP UI) | 7682 |
+
+They are fully independent — separate containers, separate state, separate config. Install either or both.
+
+Claude Terminal is an enhanced fork of [heytcass/home-assistant-addons](https://github.com/heytcass/home-assistant-addons). OpenCode is a fresh add-on built in 2026-04.
 
 ## Installation
 
 1. **Settings → Add-ons → Add-on Store**
 2. **⋮ menu → Repositories**
 3. Add `https://github.com/Maheidem/home-assistant-addons`
-4. Install **Claude Terminal**, start it, click **OPEN WEB UI**
-5. Type `claude` in the terminal, follow the OAuth prompts to log in
+4. Install either **Claude Terminal** or **OpenCode** (or both), start it, click **OPEN WEB UI**.
+
+### First run
+
+- **Claude Terminal**: type `claude` in the web terminal, follow OAuth prompts.
+- **OpenCode**: open the Configuration tab, paste provider API keys, start the add-on, open the web UI.
 
 ## Add-on docs
 
-- [`claude-terminal/README.md`](claude-terminal/README.md) — feature overview
-- [`claude-terminal/DOCS.md`](claude-terminal/DOCS.md) — full add-on documentation, configuration, troubleshooting
-- [`claude-terminal/CHANGELOG.md`](claude-terminal/CHANGELOG.md) — release notes (2.0.0 is a breaking rewrite — see migration notes there)
+- Claude Terminal: [README](claude-terminal/README.md) · [DOCS](claude-terminal/DOCS.md) · [CHANGELOG](claude-terminal/CHANGELOG.md)
+- OpenCode: [README](opencode-terminal/README.md) · [DOCS](opencode-terminal/DOCS.md) · [CHANGELOG](opencode-terminal/CHANGELOG.md)
 
 ## Development
 
-Repo includes a Nix flake (`flake.nix`) with podman, hadolint, and helper aliases:
+Repo includes a Nix flake (`flake.nix`) with podman, hadolint, and helper aliases for both add-ons:
 
 ```bash
-nix develop          # or `direnv allow` once
-build-addon          # podman build of the amd64 image
-run-addon            # run locally on :7681 with ./config mounted
-lint-dockerfile      # hadolint
-test-endpoint        # curl localhost:7681
+nix develop                 # or `direnv allow` once
+
+# Claude Terminal
+build-addon                 # podman build
+run-addon                   # :7681
+lint-dockerfile
+test-endpoint
+
+# OpenCode
+build-opencode              # podman build
+run-opencode                # :7682
+lint-opencode-dockerfile
+test-opencode-endpoint
 ```
 
-See `DEVELOPMENT.md` for the full workflow.
+See `DEVELOPMENT.md` for the full workflow of both.
 
 ## License
 

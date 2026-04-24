@@ -1,0 +1,78 @@
+name: "OpenCode"
+description: "OpenCode web UI — a coding agent you drive from the Home Assistant dashboard"
+version: "1.0.0"
+slug: "opencode_terminal"
+init: false
+
+# Supported architectures.
+# armv7 is dropped because Bun (required by OpenCode plugins and some MCP
+# servers) does not ship a musl build for armv7.
+arch:
+  - aarch64
+  - amd64
+
+# External resources
+url: "https://opencode.ai"
+
+# Web interface configuration
+ingress: true
+ingress_port: 7682
+panel_icon: mdi:code-tags
+panel_title: "OpenCode"
+panel_admin: true
+
+# Port configuration.
+# Unlike claude-terminal, we don't expose the port host-side by default — the
+# web UI is meant to be reached via HA ingress. Users who want direct access
+# can remap the port through the HA UI.
+ports:
+  7682/tcp: null
+ports_description:
+  7682/tcp: "OpenCode web UI (not required when using ingress)"
+
+# Add-on options.
+# Secrets are declared as top-level fields so HA renders them as password
+# inputs (supervisor stores them encrypted, never round-trips to the UI in
+# plaintext). They get exported as env vars by run.sh, so your opencode.json
+# can reference them with `{env:ZHIPU_API_KEY}` etc.
+#
+# `extra_env` is a multi-line escape hatch for anything beyond the curated
+# five. One KEY=VALUE per line.
+options:
+  log_level: info
+  zhipu_api_key: ""
+  anthropic_api_key: ""
+  openai_api_key: ""
+  waha_api_key: ""
+  waha_api_url: ""
+  extra_env: ""
+schema:
+  # OpenCode's valid levels are DEBUG|INFO|WARN|ERROR (opencode web --help).
+  # We take them lowercase here and upcase in run.sh before passing through.
+  log_level: list(debug|info|warn|error)
+  zhipu_api_key: password?
+  anthropic_api_key: password?
+  openai_api_key: password?
+  waha_api_key: password?
+  waha_api_url: str?
+  extra_env: str?
+
+# Volume mapping — modern HA pattern.
+# - addon_config (rw): user-editable files at /config inside the container,
+#   visible on the host at /addon_configs/opencode_terminal/, included in
+#   per-add-on backups. This is where opencode.json lives.
+# - /data is mounted automatically by the supervisor (no map entry needed).
+#   Add-on-private state (SQLite DB, auth.json, MCP auth, gh creds, SSH keys,
+#   shell history, opencode installation dir) lives here.
+#
+# We do NOT map `config:rw` — that would give the add-on read/write access
+# to every HA integration secret.
+map:
+  - addon_config:rw
+
+# AppArmor profile shipped in apparmor.txt. Starter profile runs in complain
+# mode until we have enough field data to flip to enforce.
+apparmor: true
+
+# Service startup configuration
+startup: services

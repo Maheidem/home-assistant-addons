@@ -1,0 +1,61 @@
+#include <tunables/global>
+
+profile opencode_terminal flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/bash>
+  #include <abstractions/consoles>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+  #include <abstractions/perl>
+  #include <abstractions/python>
+
+  # Capabilities needed for root-owned setup inside a container.
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability net_bind_service,
+  capability net_raw,
+  capability setgid,
+  capability setuid,
+  capability sys_chroot,
+  capability sys_ptrace,
+
+  # Network — OpenCode talks to LLM providers, MCP servers, and HA ingress.
+  network inet dgram,
+  network inet stream,
+  network inet6 dgram,
+  network inet6 stream,
+  network netlink raw,
+  network unix stream,
+
+  # Binaries: let the container run its own toolchain.
+  /run.sh ix,
+  /opt/opencode-boot.sh ix,
+  /usr/local/bin/opencode ix,
+  /usr/local/bin/bun ix,
+  /usr/local/bin/bunx ix,
+  /usr/local/bin/node ix,
+  /usr/bin/** ix,
+  /bin/** ix,
+  /sbin/** ix,
+  /root/.local/bin/** ix,
+
+  # Filesystem — OpenCode needs /data (private state) and /config
+  # (addon_config, user-editable). /root is the $HOME inside the container.
+  /data/** rwk,
+  /config/** rwk,
+  /root/** rwk,
+  /tmp/** rwk,
+  /var/tmp/** rwk,
+
+  # Read-only world for library lookups.
+  /usr/** r,
+  /lib/** r,
+  /lib64/** r,
+  /etc/** r,
+  /proc/** r,
+  /sys/** r,
+}
