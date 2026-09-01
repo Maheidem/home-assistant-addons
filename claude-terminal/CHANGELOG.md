@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.1.0
+
+Feature release. No breaking changes; upgrades from 2.0.x need no manual steps. See the upgrade notes at the end of this entry.
+
+### Added
+- **`oauth_token` option.** Long-lived token from `claude setup-token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`. Browser-free login for always-on setups. Cannot establish Remote Control sessions (Claude Code limitation for setup-token auth).
+- **`api_key` option.** Claude Console key, exported as `ANTHROPIC_API_KEY`. If both are set the API key wins (Claude Code's documented precedence) and a warning is logged.
+- **`claude_version` option.** Pins the Claude Code version activated at boot. Only activates a version that is already installed; falls back to the newest with a warning otherwise. Sets `DISABLE_AUTOUPDATER=1` while pinned.
+- **`claude-login [-q]`.** Pulls the last Claude OAuth login URL out of the tmux scrollback (soft and hard wraps rejoined), writes it to `/config/claude-config/login-url.txt` (0600) and renders a QR code. For the Companion app and other WebViews where links are not clickable.
+- **`ha-check`, `ha-restart [-y]`, `ha-notify "title" "message"`.** Thin wrappers over the Supervisor's Core API proxy (`check_config`, with a 5-minute budget because it loads every integration; `homeassistant.restart` gated on a valid config plus confirmation; `persistent_notification.create`). Backed by the new `homeassistant_api: true`. `hassio_api` is deliberately not requested.
+- **`startup_command` restart loop.** The command is restarted when it exits: 5s backoff doubling to 60s, reset after a run of 60s or more, give up after 5 crash-like exits (runs under 60s) in 10 minutes and drop to bash. Ctrl+C during the countdown cancels. `/config/claude-config/no-restart` disables restarts.
+- **ttyd restart loop.** ttyd is restarted in place if it dies; 5 exits in 120s make the add-on exit 1 so the Supervisor watchdog restarts it. SIGTERM still stops the container promptly.
+- **Session log.** tmux pane output is piped through `s6-log` into `/config/claude-config/logs/current`, rotated at 2 MB with three old files kept (about 8 MB tops). It can contain anything printed in the pane (login URLs, device codes); the directory is 0700 and lives inside the HA backup like the rest of `/config`.
+- **Seeded `/config/CLAUDE.md`** (only if absent) with short guidance for Claude: this is a live HA install, back up before editing YAML, `ha-check` before `ha-restart`, never print secrets, which helpers exist.
+- `flake.nix`: `build-addon-arm64` / `run-addon-arm64` aliases (aarch64 base image; what an Apple Silicon host can build natively).
+- `qrencode` in the image, for `claude-login`.
+
+### Changed
+- **Non-fatal boot steps.** Seeding, install persistence, activation, pruning, symlinks, gh migration, session log and `init.sh` each log a warning on failure instead of aborting the boot. Only the persistent dir, env exports and tmux start can still abort it.
+- **Symlink migration instead of `rm -rf`.** A non-empty real file or directory found where `~/.ssh`, `~/.config`, `~/.claude` and friends should be is moved to `/config/claude-config/migrated/<name>.<epoch>` instead of deleted.
+- **Old Claude Code versions are pruned** at boot: the newest two plus the active one are kept.
+- ttyd uses `rendererType=dom` so terminal text is real DOM text, selectable in WKWebView / the Companion app where the WebGL canvas gave nothing to select.
+- Welcome banner moved from a runtime heredoc in `run.sh` to `welcome.sh`, copied into `/etc/profile.d/` at build time; text updated for the new options and helpers.
+- Default `settings.json` moved from a Dockerfile `printf` to `settings.default.json`.
+- Both secret options use the `password` schema type so the HA UI masks them; values only go into the environment, never onto a command line.
+- armv7 note corrected: Bun ships no Linux armv7 build at all, not just no musl one.
+
+### Removed
+- The `addons:ro` volume map. Nothing used it.
+- The Go `yq` binary. It had no consumer in the image. (The Nix dev shell still has `yq-go`; that is unrelated to the container.)
+
+### Security
+- **New installs get `permissions.deny` rules** in `settings.json`: `Read/Edit(//config/secrets.yaml)`, `Read/Edit(//config/.storage/**)`, `Read(//config/*.db)`, `Read(//config/*.db-*)`. These cover Claude's file tools, not shell commands you approve.
+- **ttyd binary is checksum-verified** at build time against the release's `SHA256SUMS`; a mismatch fails the build.
+- The container's reach is now `/config` plus the Core REST API only (the `addons` mount is gone; the Supervisor API was never requested).
+
+### Upgrade notes
+- All new options are optional and default to empty. An existing install behaves as before after the update, plus the restart loop on `startup_command` if you have one set. Create `/config/claude-config/no-restart` if you want the old run-once behaviour.
+- **Existing `settings.json` files are not modified.** To merge the new deny rules into yours (with Claude not running):
+
+  ```bash
+  cd /config/claude-config && jq --slurpfile d /opt/claude-defaults/settings.json \
+    '.permissions.deny = ((.permissions.deny // []) + $d[0].permissions.deny | unique)' \
+    settings.json > settings.json.new && mv settings.json.new settings.json
+  ```
+- If you relied on `/addons` being visible inside the terminal, it no longer is.
+- If you relied on `yq` inside the terminal, install it under `/config` (see "What does NOT persist" in DOCS.md) or use `python3 -c 'import yaml'` / `jq` for JSON.
+- `/config/CLAUDE.md` is created if you do not have one. Delete it if you do not want it; it is not re-created while a file exists at that path.
+
 ## 2.0.4
 
 Bug-fix release. No breaking changes (auto-migrates from 2.0.x).

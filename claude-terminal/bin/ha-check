@@ -1,0 +1,64 @@
+#!/bin/bash
+# ha-check — validate the Home Assistant YAML configuration.
+#
+# POSTs /api/config/core/check_config through the Supervisor's Core API proxy
+# (http://supervisor/core/api, authenticated with SUPERVISOR_TOKEN; requires
+# `homeassistant_api: true` in config.yaml). Prints the JSON result and exits
+# 0 only when result == "valid", so it can gate `ha-restart` or a script.
+#
+# Exit codes: 0 valid, 1 invalid or request failed, 2 Core API unavailable.
+#
+# check_config loads every integration's config; on mid-size installs with
+# custom components it routinely takes 30-90 s, so the timeout is generous
+# (5 min). The other helpers keep 30 s.
+
+set -uo pipefail
+
+URL=http://supervisor/core/api/config/core/check_config
+TIMEOUT=300
+
+if [ -z "${SUPERVISOR_TOKEN:-}" ]; then
+    echo "ha-check: SUPERVISOR_TOKEN is not set, so the Home Assistant Core API is not available." >&2
+    echo "          This only works when the container runs as a Supervisor add-on (homeassistant_api: true), not under a local docker/podman run." >&2
+    exit 2
+fi
+
+# No -f: on a 4xx/5xx we want the body (it says why), so the status code is
+# appended on its own line with -w and split off below.
+out=$(timeout "$((TIMEOUT + 10))" curl -sS -X POST \
+    --max-time "${TIMEOUT}" \
+    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -w '\n%{http_code}' \
+    "${URL}")
+rc=$?
+if [ "${rc}" -ne 0 ]; then
+    if [ "${rc}" -eq 124 ] || [ "${rc}" -eq 28 ]; then
+        echo "ha-check: Home Assistant did not finish check_config within ${TIMEOUT} s." >&2
+        echo "          It may still be running; the host is slow or the config is large. Try again in a minute, or raise TIMEOUT in /usr/local/bin/ha-check." >&2
+    else
+        echo "ha-check: request to ${URL} failed (curl exit ${rc})" >&2
+    fi
+    exit 1
+fi
+code="${out##*$'\n'}"
+resp="${out%$'\n'*}"
+if [ "${code}" != "200" ]; then
+    echo "ha-check: Core API answered HTTP ${code} for ${URL}" >&2
+    [ -n "${resp}" ] && printf '%s\n' "${resp}" >&2
+    case "${code}" in
+        401|403) echo "          Unauthorized: the add-on needs homeassistant_api: true (it is set in the shipped config.yaml; a stale Supervisor token can also cause this, restart the add-on)." >&2 ;;
+        404)     echo "          Endpoint not found: is Home Assistant Core running (not safe mode / still starting)?" >&2 ;;
+    esac
+    exit 1
+fi
+
+# Pretty-print when it is JSON; fall back to the raw body otherwise.
+printf '%s' "${resp}" | jq . 2>/dev/null || printf '%s\n' "${resp}"
+
+result=$(printf '%s' "${resp}" | jq -r '.result // empty' 2>/dev/null)
+if [ "${result}" = "valid" ]; then
+    exit 0
+fi
+echo "ha-check: configuration is ${result:-unknown (unexpected response)}" >&2
+exit 1

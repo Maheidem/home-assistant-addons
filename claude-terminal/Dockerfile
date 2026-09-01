@@ -22,15 +22,16 @@ RUN apt-get update \
 
 # --- Core packages --------------------------------------------------------
 # - git, nano, tmux, tree: core tools
-# - jq: JSON processing
+# - jq: JSON processing (also used by run.sh and the ha-* helpers)
 # - nodejs, npm: general-purpose Node runtime (not needed for Claude itself
 #   anymore, kept for user dev work). Bookworm ships Node 18, which reached
 #   upstream EOL in April 2025; users who need a current Node should install
 #   one under /config via nvm/fnm, or use bun instead.
-# - ripgrep: system ripgrep (USE_BUILTIN_RIPGREP=0 below)
+# - ripgrep: system ripgrep (USE_BUILTIN_RIPGREP=0 in the default settings)
 # - gh: GitHub PRs/issues/workflows
 # - openssh-client: SSH for git operations
 # - python3: HA automations and scripting
+# - qrencode: `claude-login` renders the OAuth URL as a terminal QR code
 # - unzip: needed to unpack the Bun installer archive
 # - bash-completion, less: creature-comforts
 RUN apt-get update \
@@ -45,6 +46,7 @@ RUN apt-get update \
         npm \
         openssh-client \
         python3 \
+        qrencode \
         ripgrep \
         tmux \
         tree \
@@ -52,29 +54,36 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # --- ttyd (web terminal) --------------------------------------------------
-# Not in Debian repos; use the upstream static binary.
+# Not in Debian repos; use the upstream static binary, verified against the
+# SHA256SUMS file published with the same release so a tampered or truncated
+# download fails the build instead of shipping.
 ARG TTYD_VERSION=1.7.7
 RUN arch="$(uname -m)" \
-    && curl -fsSL -o /usr/local/bin/ttyd "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${arch}" \
-    && chmod +x /usr/local/bin/ttyd \
+    && base="https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}" \
+    && curl -fsSL -o /tmp/ttyd "${base}/ttyd.${arch}" \
+    && curl -fsSL -o /tmp/SHA256SUMS "${base}/SHA256SUMS" \
+    && awk -v f="ttyd.${arch}" '$2 == f { print $1 "  /tmp/ttyd" }' /tmp/SHA256SUMS > /tmp/ttyd.sha256 \
+    && test -s /tmp/ttyd.sha256 \
+    && sha256sum -c /tmp/ttyd.sha256 \
+    && install -m 0755 /tmp/ttyd /usr/local/bin/ttyd \
+    && rm -f /tmp/ttyd /tmp/SHA256SUMS /tmp/ttyd.sha256 \
     && ttyd --version
-
-# --- yq (Go version) -----------------------------------------------------
-# Debian ships a Python yq; we use mikefarah's Go yq for YAML round-tripping.
-ARG YQ_VERSION=v4.53.6
-RUN arch="$(dpkg --print-architecture)" \
-    && curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${arch}" \
-    && chmod +x /usr/local/bin/yq \
-    && yq --version
 
 # --- Claude Code CLI ------------------------------------------------------
 # Official native installer. Works on glibc distros (Debian). Pinned version
 # is only the *starting point* — run.sh persists the install dir and
 # re-points the launcher on every boot, so Claude's own auto-updater and
 # `claude install X` both stick across restarts. See run.sh for the details.
+# The trailing rm: `claude --version` may leave state under /root/.claude and
+# /root/.config; run.sh symlinks those paths to the persistent volume on every
+# boot and would otherwise stash the image's leftovers into migrated/ each
+# time. /root/.claude.json is deliberately KEPT: the installer records
+# `installMethod: native` there, and without it `claude doctor` / `claude
+# update` warn that the install method is "not set" on every fresh volume.
 ENV CLAUDE_VERSION=2.1.257
 RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_VERSION}" \
-    && /root/.local/bin/claude --version
+    && /root/.local/bin/claude --version \
+    && rm -rf /root/.claude /root/.config
 
 # --- Bun ------------------------------------------------------------------
 # Required by Bun-based plugin runtimes (e.g. the Telegram channel plugin).
@@ -87,29 +96,28 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
 # Make the native-installed Claude binary available on every shell's PATH.
 ENV PATH="/root/.local/bin:${PATH}"
 
-# --- Default settings ----------------------------------------------------
-# run.sh copies this into the persistent volume on first boot if absent.
-# - USE_BUILTIN_RIPGREP=0 → use system ripgrep
-# Auto-update is NOT disabled: the install dir is persisted (see run.sh) so
-# Claude's own updater and manual `claude install X` both stick across restarts.
-# Users who want to pin can add `"DISABLE_AUTOUPDATER": "1"` here themselves.
-RUN mkdir -p /opt/claude-defaults \
-    && printf '%s\n' \
-       '{' \
-       '  "env": {' \
-       '    "USE_BUILTIN_RIPGREP": "0"' \
-       '  }' \
-       '}' > /opt/claude-defaults/settings.json
+# --- Defaults seeded into the persistent volume on first boot ------------
+# settings.json: system ripgrep + permission deny rules for secrets.yaml,
+# .storage and the recorder DB. CLAUDE.md: project instructions for /config.
+# run.sh copies each only if the destination doesn't exist yet.
+COPY settings.default.json /opt/claude-defaults/settings.json
+COPY config-CLAUDE.md /opt/claude-defaults/CLAUDE.md
 
 WORKDIR /config
 
-# --- Boot scripts and shell config ---------------------------------------
-# bashrc.sh is loaded by every interactive shell via /etc/profile.d/.
+# --- Boot scripts, shell config, helpers ----------------------------------
+# welcome.sh and bashrc.sh are loaded by every interactive shell via
+# /etc/profile.d/. bin/* are user-facing helpers (ha-check, ha-restart,
+# ha-notify, claude-login).
 COPY run.sh /run.sh
 COPY tmux-session.sh /opt/tmux-session.sh
 COPY tmux.conf /root/.tmux.conf
+COPY welcome.sh /etc/profile.d/01-claude-terminal-welcome.sh
 COPY bashrc.sh /etc/profile.d/02-claude-terminal-bash.sh
-RUN chmod +x /run.sh /opt/tmux-session.sh
+COPY bin/claude-login bin/ha-check bin/ha-restart bin/ha-notify /usr/local/bin/
+RUN chmod +x /run.sh /opt/tmux-session.sh \
+        /usr/local/bin/claude-login /usr/local/bin/ha-check \
+        /usr/local/bin/ha-restart /usr/local/bin/ha-notify
 
 # Use exec form for better signal handling.
 CMD ["/run.sh"]

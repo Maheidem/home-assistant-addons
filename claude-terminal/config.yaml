@@ -1,12 +1,12 @@
 name: "Claude Terminal"
 description: "Terminal interface for Anthropic's Claude Code CLI"
-version: "2.0.4"
+version: "2.1.0"
 slug: "claude_terminal"
 init: false
 
 # Supported architectures.
 # armv7 is dropped: Bun (required by some plugin runtimes such as the official
-# Telegram channel) does not ship a musl build for armv7.
+# Telegram channel) ships no Linux armv7 build at all, glibc or musl.
 arch:
   - aarch64
   - amd64
@@ -20,6 +20,13 @@ ingress_port: 7681
 panel_icon: mdi:code-braces
 panel_title: "Claude Terminal"
 panel_admin: true
+
+# Home Assistant Core API access (http://supervisor/core/api, authenticated
+# with SUPERVISOR_TOKEN). Needed by the ha-check / ha-restart / ha-notify
+# helpers shipped in the image. This is the narrowest grant that covers them:
+# it exposes only Core's REST API. hassio_api (the Supervisor API: add-on
+# management, host reboot, backups, ...) is deliberately NOT requested.
+homeassistant_api: true
 
 # Port configuration
 # Not published by default: direct access to 7681 is unauthenticated (ttyd
@@ -37,28 +44,46 @@ ports_description:
 # network, the same way ingress reaches it.
 watchdog: "http://[HOST]:[PORT:7681]/"
 
-# Add-on configuration options.
-# `startup_command` is the single user-tunable knob. When empty (default), the
-# tmux session opens a plain bash shell — type `claude` yourself, like a normal
-# terminal. When set, the command runs inside the tmux session at container boot
-# and stays running until it exits, regardless of whether the web terminal is open.
-# Useful values:
-#   ""                                                                  → plain bash (default)
-#   "claude"                                                            → auto-launch Claude
-#   "claude -c"                                                         → resume most recent conversation
-#   "claude -c --channels plugin:telegram@claude-plugins-official"      → always-on Telegram bot
+# Add-on configuration options. All optional; defaults reproduce a plain
+# terminal that you log into interactively.
 #
-# When the configured command exits, the tmux session falls through to a bash
-# prompt so you can reconnect via the web terminal and recover.
+# startup_command — runs inside the tmux session at container boot and is
+#   restarted (with backoff) if it exits, regardless of whether the web
+#   terminal is open. Empty (default) → plain bash, type `claude` yourself.
+#     "claude"                                                        → auto-launch Claude
+#     "claude -c"                                                     → resume most recent conversation
+#     "claude -c --channels plugin:telegram@claude-plugins-official"  → always-on Telegram bot
+#   Create /config/claude-config/no-restart to stop the auto-restart loop.
+#
+# oauth_token — long-lived token from `claude setup-token` (Pro/Max/Team/
+#   Enterprise). Exported as CLAUDE_CODE_OAUTH_TOKEN so `claude` needs no
+#   browser login. Useful when the interactive OAuth flow is awkward (e.g. the
+#   HA Companion app). Stored by the Supervisor like any other add-on option.
+#
+# api_key — Claude Console API key, exported as ANTHROPIC_API_KEY (pay-as-you-
+#   go billing). If both are set, ANTHROPIC_API_KEY wins per Claude Code's
+#   documented precedence.
+#
+# claude_version — pin the Claude Code version activated at boot, e.g.
+#   "2.1.257". Must already be installed (`claude install X.Y.Z` from the
+#   terminal); otherwise the newest installed version is used and a warning is
+#   logged. Also disables the auto-updater while set. Empty → newest wins.
 options:
   startup_command: ""
+  oauth_token: ""
+  api_key: ""
+  claude_version: ""
 schema:
   startup_command: str?
+  oauth_token: password?
+  api_key: password?
+  claude_version: str?
 
-# Volume mapping for persistent storage
+# Volume mapping for persistent storage. Only /config is needed: Claude's own
+# state lives under /config/claude-config and the HA YAML config is what the
+# user wants Claude to work on.
 map:
-  - config:rw    # Claude configuration and credentials
-  - addons:ro    # Read-only access to other add-ons
+  - config:rw
 
 # Service startup configuration
 startup: services

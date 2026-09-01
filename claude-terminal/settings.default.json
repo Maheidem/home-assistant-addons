@@ -1,0 +1,15 @@
+{
+  "env": {
+    "USE_BUILTIN_RIPGREP": "0"
+  },
+  "permissions": {
+    "deny": [
+      "Read(//config/secrets.yaml)",
+      "Edit(//config/secrets.yaml)",
+      "Read(//config/.storage/**)",
+      "Edit(//config/.storage/**)",
+      "Read(//config/*.db)",
+      "Read(//config/*.db-*)"
+    ]
+  }
+}

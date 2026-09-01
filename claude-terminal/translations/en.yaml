@@ -4,7 +4,25 @@ configuration:
     description: >-
       Command to run inside the tmux session at container boot, before any
       browser is attached. Stays running until it exits, regardless of
-      whether the web terminal is open. Leave empty (default) for a plain
-      bash shell — type `claude` yourself. When the command exits, the tmux
-      session falls through to a bash prompt so you can reconnect and
-      recover.
+      whether the web terminal is open, and is restarted with backoff if it
+      exits. Leave empty (default) for a plain bash shell — type `claude`
+      yourself. Create /config/claude-config/no-restart to disable the
+      restart loop.
+  oauth_token:
+    name: Claude OAuth token
+    description: >-
+      Long-lived token from `claude setup-token` (Pro/Max/Team/Enterprise
+      plans). Exported as CLAUDE_CODE_OAUTH_TOKEN so Claude Code starts
+      without a browser login. Leave empty to log in interactively.
+  api_key:
+    name: Anthropic API key
+    description: >-
+      Claude Console API key (pay-as-you-go), exported as ANTHROPIC_API_KEY.
+      If both this and the OAuth token are set, the API key takes precedence.
+  claude_version:
+    name: Pinned Claude Code version
+    description: >-
+      Version to activate at boot, e.g. 2.1.257. Must already be installed
+      (run `claude install X.Y.Z` from the terminal first). Disables the
+      auto-updater while set. Leave empty to always use the newest installed
+      version.

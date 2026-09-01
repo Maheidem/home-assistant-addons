@@ -35,10 +35,12 @@
             echo "🏠 Home Assistant Add-on Development Environment"
             echo ""
             echo "Claude Terminal:"
-            echo "  build-addon     - Build the Claude Terminal add-on"
-            echo "  run-addon       - Run Claude Terminal locally on :7681"
-            echo "  lint-dockerfile - Lint Claude Terminal's Dockerfile"
-            echo "  test-endpoint   - Curl Claude Terminal's endpoint"
+            echo "  build-addon       - Build the Claude Terminal add-on (amd64 base)"
+            echo "  run-addon         - Run Claude Terminal locally on :7681"
+            echo "  build-addon-arm64 - Same, aarch64 base (native on Apple Silicon)"
+            echo "  run-addon-arm64   - Run the aarch64 image locally on :7681"
+            echo "  lint-dockerfile   - Lint Claude Terminal's Dockerfile"
+            echo "  test-endpoint     - Curl Claude Terminal's endpoint"
             echo ""
             echo "OpenCode:"
             echo "  build-opencode            - Build the OpenCode add-on"
@@ -53,6 +55,11 @@
             # Claude Terminal (uses /config:rw map and the legacy config volume).
             alias build-addon='podman build --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm -t local/claude-terminal ./claude-terminal'
             alias run-addon='podman run --rm -p 7681:7681 -v $(pwd)/claude-terminal/.local-config:/config local/claude-terminal'
+            # aarch64 variants: amd64 can't be built under QEMU on Apple Silicon
+            # (the Bun installer dies with MemoryExhaustion), so build the arm
+            # image natively there instead. Separate tag so both can coexist.
+            alias build-addon-arm64='podman build --build-arg BUILD_FROM=ghcr.io/home-assistant/aarch64-base-debian:bookworm -t local/claude-terminal:arm64 ./claude-terminal'
+            alias run-addon-arm64='podman run --rm -p 7681:7681 -v $(pwd)/claude-terminal/.local-config:/config local/claude-terminal:arm64'
             alias lint-dockerfile='hadolint ./claude-terminal/Dockerfile'
             alias test-endpoint='curl -X GET http://localhost:7681/ || echo "claude-terminal not running. Use: run-addon"'
 

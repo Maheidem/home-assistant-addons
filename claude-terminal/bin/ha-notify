@@ -1,0 +1,34 @@
+#!/bin/bash
+# ha-notify — post a persistent notification to the Home Assistant frontend.
+#
+# Calls the persistent_notification.create service via the Supervisor's Core
+# API proxy. Handy for "Claude finished X" pings from scripts or hooks.
+#
+# Usage: ha-notify "title" "message"
+
+set -uo pipefail
+
+if [ $# -ne 2 ]; then
+    echo 'usage: ha-notify "title" "message"' >&2
+    exit 64
+fi
+
+if [ -z "${SUPERVISOR_TOKEN:-}" ]; then
+    echo "ha-notify: SUPERVISOR_TOKEN is not set, so the Home Assistant Core API is not available." >&2
+    echo "           This only works when the container runs as a Supervisor add-on (homeassistant_api: true), not under a local docker/podman run." >&2
+    exit 2
+fi
+
+# jq builds the JSON so quotes/newlines in the arguments are escaped properly.
+payload=$(jq -cn --arg title "$1" --arg message "$2" '{title: $title, message: $message}')
+
+if timeout 30 curl -fsS -X POST \
+    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "${payload}" \
+    http://supervisor/core/api/services/persistent_notification/create >/dev/null; then
+    echo "Notification sent."
+else
+    echo "ha-notify: request failed (exit $?)" >&2
+    exit 1
+fi

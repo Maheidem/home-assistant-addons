@@ -1,0 +1,53 @@
+#!/bin/bash
+# ha-restart — restart Home Assistant Core, but only if the config validates.
+#
+# Runs `ha-check` first and refuses to restart on an invalid configuration
+# (a restart with broken YAML leaves HA in safe mode with most integrations
+# down). Asks for confirmation unless -y is given, then calls the
+# homeassistant.restart service via the Supervisor's Core API proxy.
+#
+# Usage: ha-restart [-y]
+
+set -uo pipefail
+
+assume_yes=0
+case "${1:-}" in
+    -y) assume_yes=1 ;;
+    "") ;;
+    -h|--help) echo "usage: ha-restart [-y]"; exit 0 ;;
+    *) echo "usage: ha-restart [-y]" >&2; exit 64 ;;
+esac
+
+if [ -z "${SUPERVISOR_TOKEN:-}" ]; then
+    echo "ha-restart: SUPERVISOR_TOKEN is not set, so the Home Assistant Core API is not available." >&2
+    echo "            This only works when the container runs as a Supervisor add-on (homeassistant_api: true), not under a local docker/podman run." >&2
+    exit 2
+fi
+
+if ! ha-check; then
+    echo "ha-restart: refusing to restart with an invalid (or unverifiable) configuration." >&2
+    exit 1
+fi
+
+if [ "${assume_yes}" -eq 0 ]; then
+    if [ ! -t 0 ]; then
+        echo "ha-restart: no terminal to confirm on; pass -y to restart non-interactively." >&2
+        exit 1
+    fi
+    read -r -p "Restart Home Assistant Core? [y/N] " answer
+    case "${answer}" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; exit 1 ;;
+    esac
+fi
+
+if timeout 30 curl -fsS -X POST \
+    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{}' \
+    http://supervisor/core/api/services/homeassistant/restart >/dev/null; then
+    echo "Restart requested. Home Assistant will be unavailable for a moment."
+else
+    echo "ha-restart: restart request failed (exit $?)" >&2
+    exit 1
+fi

@@ -37,3 +37,4 @@ Thumbs.db
 # Session scratch (memory + handoffs; local-only)
 .remember/
 .scratchpad/
+.orchestrator-mode.state

@@ -1,0 +1,95 @@
+#!/bin/bash
+# claude-login — recover the Claude Code OAuth login URL from the tmux session.
+#
+# Why: inside the HA Companion app (WKWebView) links in the terminal are not
+# clickable and copy is unreliable, so the URL Claude prints at login is hard
+# to get to another device. This script scrapes it out of tmux's scrollback,
+# writes it to a file you can open from the HA file editor / Samba, and shows
+# it as a QR code to scan with a phone.
+#
+# Usage: claude-login [-q]     (-q: skip the QR code)
+#
+# Run it from a shell other than the pane Claude is waiting in, e.g. a second
+# tmux window (Ctrl+b c), or via `docker exec`/the SSH add-on.
+
+set -uo pipefail
+
+SESSION=claude-main
+CFG_DIR="${CLAUDE_CONFIG_DIR:-/config/claude-config}"
+OUT="${CFG_DIR}/login-url.txt"
+# Quotes are excluded so a typed command like `echo "https://..."` visible in
+# the scrollback never counts as (or glues onto) the URL Claude printed.
+URL_RE='https://(claude\.ai|console\.anthropic\.com)/oauth[^[:space:]"'"'"']*'
+
+show_qr=1
+case "${1:-}" in
+    -q) show_qr=0 ;;
+    "") ;;
+    -h|--help) echo "usage: claude-login [-q]"; exit 0 ;;
+    *) echo "usage: claude-login [-q]" >&2; exit 64 ;;
+esac
+
+if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
+    echo "claude-login: tmux session '${SESSION}' not found; is the add-on booted?" >&2
+    exit 1
+fi
+
+# Claude Code's UI (Ink) hard-wraps long lines: the ~300-char OAuth URL is
+# printed as several physical lines with real newlines, which tmux's -J
+# (rejoin *soft* wraps only) cannot undo. Glue them back: a line that ends in
+# a URL starts a buffer; following lines are appended while they look like a
+# wrapped continuation. Three guards keep unrelated lines out of the URL:
+#   1. the previous physical line was long (a hard wrap fills most of the
+#      width; a short URL followed by something else is not wrapped),
+#   2. the line is made only of URL characters (no whitespace),
+#   3. the line is not a shell prompt (`user@host:path`), which is exactly
+#      what follows a URL echoed at an interactive prompt in this image
+#      (bashrc.sh prints a two-line PS1).
+# Works with mawk (Debian's awk).
+glue_wrapped_urls() {
+    awk '
+        function flush() { if (buf != "") { print buf; buf = "" } }
+        {
+            if (buf != "") {
+                if (prevlen >= 60 \
+                    && $0 ~ /^[A-Za-z0-9._~:\/?#@!$&()*+,;=%-]+$/ \
+                    && $0 !~ /^[^@]+@[^:]+:/) {
+                    buf = buf $0; prevlen = length($0); next
+                }
+                flush()
+            }
+            if ($0 ~ /https:\/\/[^ \t"\047]+$/) { buf = $0; prevlen = length($0); next }
+            print
+        }
+        END { flush() }
+    '
+}
+
+# Scan every pane in the session except the one this script runs in (which
+# would otherwise match its own earlier output). -J rejoins soft wraps,
+# glue_wrapped_urls the hard ones. The last match wins.
+url=""
+while read -r pane; do
+    [ -n "${TMUX_PANE:-}" ] && [ "${pane}" = "${TMUX_PANE}" ] && continue
+    found=$(tmux capture-pane -pJ -t "${pane}" -S -1000 2>/dev/null \
+        | glue_wrapped_urls | grep -oE "${URL_RE}" | tail -n 1) || true
+    [ -n "${found}" ] && url="${found}"
+done < <(tmux list-panes -s -t "${SESSION}" -F '#{pane_id}')
+
+if [ -z "${url}" ]; then
+    echo "No login URL found in the session yet. Start 'claude' and rerun."
+    exit 1
+fi
+
+printf '%s\n' "${url}"
+
+# 0600: the URL carries a one-time OAuth state; treat it like a credential.
+(umask 077 && printf '%s\n' "${url}" > "${OUT}") && chmod 600 "${OUT}" \
+    && echo "(also written to ${OUT})"
+
+if [ "${show_qr}" -eq 1 ] && command -v qrencode >/dev/null 2>&1; then
+    echo
+    qrencode -t ANSIUTF8 -m 2 "${url}"
+    echo
+    echo "Scan with your phone, sign in, then paste the code it shows back into the claude pane if prompted."
+fi
