@@ -3,7 +3,7 @@
 #
 # Responsibilities:
 #   1. Ensure persistent storage exists at /config/claude-config
-#   2. Seed a default settings.json on first boot (USE_BUILTIN_RIPGREP, DISABLE_AUTOUPDATER)
+#   2. Seed a default settings.json on first boot (USE_BUILTIN_RIPGREP)
 #   3. Read the user's optional `startup_command` add-on option
 #   4. Launch ttyd → tmux. tmux's `-A` flag attaches to an existing session if there is one,
 #      so closing the browser leaves the session running and reopening reattaches.
@@ -63,10 +63,28 @@ fi
 # (`claude install X` and the auto-updater both write into persistent storage
 # via the symlink above, but /root/.local/bin/claude is in the image and gets
 # reset on every restart — so update it here.)
+#
+# The highest installed version always wins on boot. This means `claude
+# install <older-version>` is reverted on the next restart unless the newer
+# version(s) are removed from
+# /config/claude-config/claude-installations/versions/ — there is currently
+# no "pin to this version permanently" option short of deleting the others.
 NEWEST_VER=$(ls -1 "${CLAUDE_INSTALLS}/versions" 2>/dev/null | sort -V | tail -1 || true)
 if [ -n "${NEWEST_VER}" ]; then
     mkdir -p /root/.local/bin
-    ln -sfn "${CLAUDE_INSTALLS}/versions/${NEWEST_VER}" /root/.local/bin/claude
+    # Symlink target MUST be lexically under .local/share/claude/versions/ —
+    # not /config/claude-config/... — even though that's the same directory
+    # via the /root/.local/share/claude symlink above. Claude Code >= 2.1.207
+    # only self-manages (auto-updates, `claude update`, version cleanup) a
+    # launcher whose symlink target resolves lexically inside
+    # ~/.local/share/claude/versions/; any other target (including a path
+    # that happens to point at the same inode through /config/...) is treated
+    # as a "custom launcher" that Claude Code will not touch. Pointing
+    # straight at ${CLAUDE_INSTALLS}/versions/... made every update install
+    # successfully but never activate until the add-on was restarted, and
+    # disabled the updater's own version cleanup. See
+    # https://code.claude.com/docs/en/setup
+    ln -sfn "/root/.local/share/claude/versions/${NEWEST_VER}" /root/.local/bin/claude
     bashio::log.info "Active Claude Code version: ${NEWEST_VER}"
 fi
 
@@ -78,8 +96,14 @@ fi
 # and add-on updates.
 ensure_symlink() {
     local src="$1" target="$2"
-    rm -rf "${src}" 2>/dev/null || true
-    ln -sf "${target}" "${src}"
+    # Only tear down and recreate when src isn't already the right symlink —
+    # an unconditional rm -rf here would blow away /root/.claude (and every
+    # other target) and recreate it on *every* boot, which is harmless for a
+    # symlink but wasteful and briefly drops the link.
+    if [ "$(readlink -- "${src}" 2>/dev/null)" != "${target}" ]; then
+        rm -rf "${src}" 2>/dev/null || true
+        ln -sf "${target}" "${src}"
+    fi
 }
 # One-time migration: 2.0.x kept `gh` auth in config-gh/; move into dot-config/
 # so the broader /root/.config symlink below picks it up.
@@ -159,14 +183,18 @@ fi
 EOF
 
 # --- User init hook -------------------------------------------------------
-# If /config/claude-config/init.sh exists, source it. Lets users run
-# arbitrary shell at boot — extra symlinks, exports, one-off setup.
-# Non-fatal on failure so a broken hook can't block the container.
+# If /config/claude-config/init.sh exists, run it in a subshell. Lets users
+# run arbitrary shell at boot — extra symlinks, one-off setup, background
+# helpers. Run in a subshell (rather than sourced) so an `exit` inside the
+# hook can't terminate run.sh and kill the boot; the tradeoff is that
+# exports inside init.sh no longer propagate to run.sh or the rest of the
+# boot — use bashrc.local for env vars instead. Non-fatal on failure so a
+# broken hook can't block the container.
 USER_INIT="${CLAUDE_DIR}/init.sh"
 if [ -f "${USER_INIT}" ]; then
     bashio::log.info "Running user init hook: ${USER_INIT}"
     # shellcheck disable=SC1090
-    . "${USER_INIT}" || bashio::log.warning "User init hook exited non-zero (ignored)"
+    ( . "${USER_INIT}" ) || bashio::log.warning "User init hook exited non-zero (ignored)"
 fi
 
 # --- Start tmux session at container boot ---------------------------------
@@ -185,11 +213,24 @@ fi
 # typed `exit` after STARTUP_CMD finished and tmux became empty), a fresh one
 # is created so the web terminal still works.
 bashio::log.info "Starting ttyd on port 7681"
-# ttyd client options (passed through to xterm.js):
-#   copyOnSelect=true → highlight text → auto-copies to clipboard (no Ctrl+C)
-#   cursorBlink=true  → visible cursor blink
-#   fontSize=14       → slightly larger than default 12px for readability
-#   scrollback=5000   → xterm.js scrollback lines (separate from tmux history)
+# ttyd --client-option flags, some ttyd's own, some passed through to
+# xterm.js:
+#   disableLeaveAlert=true → suppress the browser's "Leave site?" prompt on
+#                            tab close; the tmux session survives a closed
+#                            tab (that's the whole point), so the warning is
+#                            just noise.
+#   cursorBlink=true       → visible cursor blink (xterm.js)
+#   fontSize=14            → slightly larger than default 12px (xterm.js)
+#   scrollback=5000        → xterm.js scrollback lines, separate from tmux
+#                            history (xterm.js)
+# No --max-clients: tmux already shares one session across every connected
+# client (that's how "reopen the browser and reattach" works), so capping at
+# 1 only served to refuse a legitimate second tab.
+# Not passing copyOnSelect: ttyd 1.7.7 has no such client option (verified
+# against upstream source) — it was a no-op here. Copy-on-select itself is
+# unconditional in ttyd: any mouse selection copies via
+# document.execCommand('copy') regardless of flags, and ttyd has no built-in
+# Ctrl+C handler for copying.
 # Intentionally NOT setting fontFamily: xterm.js's default monospace stack
 # (courier new / courier / monospace) renders correctly; custom values with
 # commas / quoted family names broke letter spacing in practice.
@@ -198,8 +239,7 @@ exec ttyd \
     --interface 0.0.0.0 \
     --writable \
     --ping-interval 30 \
-    --max-clients 1 \
-    --client-option 'copyOnSelect=true' \
+    --client-option 'disableLeaveAlert=true' \
     --client-option 'cursorBlink=true' \
     --client-option 'fontSize=14' \
     --client-option 'scrollback=5000' \

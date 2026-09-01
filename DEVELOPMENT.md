@@ -21,14 +21,16 @@ lint-dockerfile      # hadolint
 test-endpoint        # curl localhost:7681
 ```
 
-The aliases live in `flake.nix`. They use `ghcr.io/home-assistant/amd64-base:3.21` as the build base.
+The aliases live in `flake.nix`. They use `ghcr.io/home-assistant/amd64-base-debian:bookworm` as the build base.
+
+> **Apple Silicon:** `amd64` cannot be built here under QEMU — the Bun installer crashes with `MemoryExhaustion` under emulation. Build `aarch64` locally instead (swap `amd64-base-debian` for `aarch64-base-debian` in the build args) and leave amd64 builds to CI or an amd64 host.
 
 ## Quick start without Nix
 
 ```bash
 # 1. Build
 podman build \
-  --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.21 \
+  --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm \
   -t local/claude-terminal:test \
   ./claude-terminal
 

@@ -82,21 +82,20 @@ bind r source-file ~/.tmux.conf \; display "Reloaded!"
 ```
 
 ### `/config/claude-config/init.sh`
-Runs once at container boot (from `run.sh`). Good for custom symlinks, one-off exports, starting background helpers — anything shell-scriptable. Runs with `set -euo pipefail` inherited from `run.sh`; non-zero exit is logged but non-fatal.
+Runs once at container boot (from `run.sh`), in a subshell — so an `exit` inside the hook can't abort the boot, but it also means **exports inside init.sh do not propagate** to the rest of the container. Good for custom symlinks, one-off setup, starting background helpers. Use `bashrc.local` (above) for anything that needs to export an env var. Non-zero exit is logged but non-fatal.
 
 ```bash
 #!/bin/bash
 # example contents: symlink an extra config dir
 ln -sfn /config/claude-config/my-stuff /root/.my-stuff
-export MY_CUSTOM_VAR=hello
 ```
 
 ### Claude Code versions
-Run `claude install X.Y.Z` inside the terminal to install a specific version — it writes to `/config/claude-config/claude-installations/versions/` and sticks across restarts. On every boot, the newest installed version is activated. To pin at a specific version, set `"DISABLE_AUTOUPDATER": "1"` inside the `env` object in `settings.json`.
+Run `claude install X.Y.Z` inside the terminal to install a specific version — it writes to `/config/claude-config/claude-installations/versions/` and sticks across restarts. On every boot, the **highest** installed version is activated — so `claude install <older-version>` reverts on the next restart unless you remove the newer version(s) from `claude-installations/versions/`. To pin at a specific version, set `"DISABLE_AUTOUPDATER": "1"` inside the `env` object in `settings.json`.
 
 ## What ships in the container
 
-- **Claude Code** — pinned version (see `CHANGELOG.md` for the current pin), installed via Anthropic's official native installer. Auto-updates are disabled inside the container; bump by updating the add-on.
+- **Claude Code** — pinned version (see `CHANGELOG.md` for the current pin) at image build time, installed via Anthropic's official native installer. Auto-updates are enabled and stick across restarts (the install dir is persisted); the pin only sets the starting point for a fresh install.
 - **Bun** — needed by some plugin runtimes (e.g. the official Telegram channel).
 - **Node.js + npm** — for general-purpose dev work (not required by Claude itself with the native installer).
 - **git, github-cli, openssh-client** — for working with repos from the terminal.
@@ -114,6 +113,8 @@ Run `claude install X.Y.Z` inside the terminal to install a specific version —
 
 This add-on is restricted to **Home Assistant admin users only** (`panel_admin: true`). The add-on has read/write access to `/config` and read access to `/addons`. Treat anyone with admin access to your HA as having shell access to your config directory.
 
+Port 7681 is **not published by default** — ingress is the only way in out of the box, and ingress requests go through HA's own login. If you enable direct access to port 7681 in the add-on's Network tab, anyone who can reach that port on your network gets an unauthenticated shell — ttyd itself has no login screen.
+
 If you set `startup_command` to something that exposes Claude over a network (e.g. the Telegram channel), be sure to lock down the channel's allowlist. The Telegram plugin has a built-in pairing flow — see its README at <https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/telegram>.
 
 ## Troubleshooting
@@ -127,6 +128,8 @@ If you set `startup_command` to something that exposes Claude over a network (e.
 **`startup_command` doesn't take effect.** The command is read at container boot. After changing it in the add-on configuration, you must **restart the add-on** for the new value to apply. Saving the config alone is not enough.
 
 **Plugin installs disappear after restart.** They shouldn't. Verify `/config/claude-config/plugins/` exists and has files. If empty, the persistent volume is not mounting correctly — check the add-on's `map:` configuration or your HA storage setup.
+
+**`claude update` (or the auto-updater) says the launcher was not created by the native installer.** Fixed in 2.0.4. Restart the add-on once; on boot it re-points the launcher through `~/.local/share/claude/versions/`, which is what the native installer's own update/cleanup logic requires.
 
 ## Changelog
 

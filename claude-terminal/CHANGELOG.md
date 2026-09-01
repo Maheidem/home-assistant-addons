@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.4
+
+Bug-fix release. No breaking changes (auto-migrates from 2.0.x).
+
+### Fixed
+- **`claude update` (and the built-in auto-updater) never activated the new version until the add-on was restarted.** The launcher at `/root/.local/bin/claude` was symlinked straight at `/config/claude-config/claude-installations/versions/X.Y.Z`. Claude Code >= 2.1.207 only self-manages a launcher whose symlink target is lexically under `~/.local/share/claude/versions/`, so this pointed-at-`/config` form read as a "custom launcher": updates installed but never activated, and the updater's own version cleanup was disabled. Fixed by symlinking through `/root/.local/share/claude/versions/` instead (same directory, different path).
+- **An `exit` inside `init.sh` could kill the boot.** The hook was sourced directly into `run.sh`'s `set -euo pipefail` shell, so a non-zero exit anywhere in it (or an explicit `exit`) aborted the rest of boot. Now runs in a subshell — a broken hook can no longer take the add-on down with it. Tradeoff: exports inside `init.sh` no longer propagate to the rest of the container; use `bashrc.local` for env vars.
+- **A second browser tab was refused.** `ttyd --max-clients 1` capped the web terminal at one connection, even though tmux already shares a single session across every connected client. Removed.
+- **Browser "Leave site?" prompt on tab close.** Noise, since the tmux session survives a closed tab by design. Added `disableLeaveAlert=true`.
+
+### Security
+- **Port 7681 is no longer published by default.** Direct access to it is unauthenticated (ttyd has no login of its own) — ingress, which is proxied through HA's own auth, is the supported path in. Set a host port in the add-on's Network tab if you specifically want direct access.
+
+### Changed
+- Bumped pins: Claude Code 2.1.114 → 2.1.257, yq v4.44.5 → v4.53.6, Bun 1.3.12 → 1.4.0.
+- Added a Supervisor watchdog (`http://[HOST]:[PORT:7681]/`) so the add-on restarts itself if ttyd stops answering.
+- Removed the `--client-option 'copyOnSelect=true'` ttyd flag — ttyd 1.7.7 has no such option; copy-on-select is unconditional in ttyd regardless of flags, so the flag was inert.
+- `ensure_symlink()` no longer tears down and recreates a symlink that's already correct.
+- Corrected several stale doc references to `DISABLE_AUTOUPDATER` (auto-update has been enabled by default since 2.0.1) across `run.sh`, `Dockerfile`, `DOCS.md`, and the repo's `CLAUDE.md`.
+
+### Notes
+- Copy-in-the-HA-panel is unreliable: ttyd relies on the browser's own mouse-selection copy (`document.execCommand('copy')`) with no fallback Ctrl+C handler, and that behavior varies by browser and by whether the tab has focus. Investigation continues; no fix in this release.
+
 ## 2.0.3
 
 Persist everything a user typically customizes. No breaking changes (auto-migrates from 2.0.x).

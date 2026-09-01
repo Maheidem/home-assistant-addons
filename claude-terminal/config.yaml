@@ -1,6 +1,6 @@
 name: "Claude Terminal"
 description: "Terminal interface for Anthropic's Claude Code CLI"
-version: "2.0.3"
+version: "2.0.4"
 slug: "claude_terminal"
 init: false
 
@@ -22,10 +22,20 @@ panel_title: "Claude Terminal"
 panel_admin: true
 
 # Port configuration
+# Not published by default: direct access to 7681 is unauthenticated (ttyd
+# has no login of its own), unlike ingress, which is proxied through HA's own
+# auth. Set the port to a host port in the add-on's Network tab if you want
+# direct access anyway (e.g. for a client that doesn't support ingress).
 ports:
-  7681/tcp: 7681
+  7681/tcp: null
 ports_description:
-  7681/tcp: "Web terminal (not required for ingress)"
+  7681/tcp: "Web terminal (optional; unauthenticated if enabled — ingress is the supported, authenticated way in)"
+
+# Restart the add-on if ttyd stops answering (e.g. it's wedged behind a dead
+# tmux session). [PORT:7681] is replaced with the effective port even though
+# `ports` above is null — the check runs against the container's internal
+# network, the same way ingress reaches it.
+watchdog: "http://[HOST]:[PORT:7681]/"
 
 # Add-on configuration options.
 # `startup_command` is the single user-tunable knob. When empty (default), the

@@ -40,7 +40,7 @@ The env var only affects Claude Code's own process. Plugins, channels, and other
 | `/root/.gitconfig` | `/config/claude-config/gitconfig` |
 | `/root/.config` | `/config/claude-config/dot-config` (wholesale — covers gh, npm, aws, gcloud, fly, etc.) |
 | `/root/.bash_history` | `/config/claude-config/bash_history` |
-| `/root/.local/share/claude` | `/config/claude-config/claude-installations` (so `claude install X` and auto-updates stick; `run.sh` also re-points `/root/.local/bin/claude` at the newest installed version on every boot) |
+| `/root/.local/share/claude` | `/config/claude-config/claude-installations` (so `claude install X` and auto-updates stick; `run.sh` also re-points `/root/.local/bin/claude` at the newest installed version on every boot, via a symlink target lexically under `/root/.local/share/claude/versions/` — required for Claude Code >= 2.1.207 to recognize the launcher as self-managed) |
 
 The `/root/.claude` symlink is deliberately redundant with `CLAUDE_CONFIG_DIR`: when both are in place, Claude Code, plugins, and channels all converge on the same persistent directory, whatever code path they use to discover it. The `/root/.config` symlink was broadened from a gh-only version in 2.0.3; `run.sh` one-time-migrates `/config/claude-config/config-gh/` → `/config/claude-config/dot-config/gh/` to preserve existing GitHub CLI auth.
 
@@ -52,16 +52,16 @@ Three optional files under `/config/claude-config/` let users tune their environ
 |---|---|---|
 | `bashrc.local` | `/etc/profile.d/02-claude-terminal-bash.sh` | shell aliases, exports, PS1 overrides |
 | `tmux.conf.local` | `/root/.tmux.conf` via `source-file` | tmux overrides |
-| `init.sh` | `run.sh` via `.` (source) | arbitrary boot-time shell (custom symlinks, background helpers, etc.) |
+| `init.sh` | `run.sh`, in a subshell | arbitrary boot-time shell (custom symlinks, background helpers, etc.) |
 
-`init.sh` failures are logged but non-fatal so a broken hook can't block the container from starting.
+`init.sh` runs in a subshell so an `exit` inside the hook can't kill the boot; the tradeoff is that exports inside init.sh don't propagate to run.sh or the rest of the container — use `bashrc.local` for exports instead. Failures are logged but non-fatal so a broken hook can't block the container from starting.
 
 ### Launch flow
 
 `run.sh` does, in order:
 
 1. `mkdir -p /config/claude-config && chmod 700`
-2. Seed default `settings.json` on first boot (`USE_BUILTIN_RIPGREP=0`, `DISABLE_AUTOUPDATER=1`)
+2. Seed default `settings.json` on first boot (`USE_BUILTIN_RIPGREP=0`)
 3. Export `CLAUDE_CONFIG_DIR` and read the `startup_command` add-on option into env
 4. Write `/etc/profile.d/01-claude-terminal-welcome.sh` (idempotent first-prompt banner)
 5. **Start tmux *detached* at container boot**: `tmux new-session -d -s claude-main -c /config /opt/tmux-session.sh`
@@ -90,8 +90,8 @@ Single user-tunable knob in `config.yaml`. Examples:
 
 - Claude Code is installed via the **official native installer**: `curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_VERSION}`. This is the canonical install path per [Anthropic's setup docs](https://code.claude.com/docs/en/setup). The binary lands at `/root/.local/bin/claude`. System `ripgrep` plus `USE_BUILTIN_RIPGREP=0` in default `settings.json` keeps Claude off its bundled ripgrep.
 - The add-on uses the **Debian (glibc) HA base image** (`ghcr.io/home-assistant/{arch}-base-debian:bookworm`) rather than the Alpine base. Reason: Claude Code's native installer starting at 2.1.64+ produces a binary that references `posix_getdents`, a musl symbol Alpine (still on 1.2.5 as of 2026-04) does not export, causing the binary to fail to relocate at runtime. Debian's glibc ships the symbol, so the native installer "just works." Anthropic's docs claim Alpine 3.19+ is supported; empirical testing shows that claim is broken for current releases — do not revert to the Alpine base without re-verifying.
-- Claude Code version is pinned in the Dockerfile via `ENV CLAUDE_VERSION=...`. Bump deliberately.
-- Auto-update is disabled inside the container (`DISABLE_AUTOUPDATER=1`) — image rebuilds are the unit of update.
+- Claude Code version is pinned in the Dockerfile via `ENV CLAUDE_VERSION=...` — that pin is only the starting point for a fresh image; the install dir is persisted (see the symlink table above), so Claude's own auto-updater and manual `claude install X` both stick across restarts. Bump the pin deliberately for new installs anyway.
+- Auto-update is enabled by default — image rebuilds are not the unit of update for an existing install. Users who want to pin can add `"DISABLE_AUTOUPDATER": "1"` to `env` in their own `settings.json`.
 - **Bun** is installed via Bun's official installer (not in Alpine repos). Required by Bun-based plugin runtimes such as the official Telegram channel.
 - Multi-arch: `amd64` and `aarch64` only. armv7 was dropped because Bun does not ship a musl build for it.
 
@@ -113,4 +113,3 @@ Single user-tunable knob in `config.yaml`. Examples:
 - `DEVELOPMENT.md` — current dev workflow.
 - `claude-terminal/CHANGELOG.md` — user-facing release notes; bump alongside `config.yaml:version`.
 - `claude-terminal/DOCS.md` — what the user sees in the HA add-on store.
-- `PLAN.md` (repo root) — v2 implementation plan; once 2.0.0 ships, archive or delete.

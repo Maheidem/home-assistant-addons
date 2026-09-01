@@ -7,6 +7,7 @@ FROM ${BUILD_FROM}
 # https://code.claude.com/docs/en/setup
 
 ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # --- GitHub CLI apt repo --------------------------------------------------
 # The `gh` package isn't in Debian's main repos; use GitHub's official one.
@@ -16,13 +17,16 @@ RUN apt-get update \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-       > /etc/apt/sources.list.d/github-cli.list
+       > /etc/apt/sources.list.d/github-cli.list \
+    && rm -rf /var/lib/apt/lists/*
 
 # --- Core packages --------------------------------------------------------
 # - git, nano, tmux, tree: core tools
 # - jq: JSON processing
 # - nodejs, npm: general-purpose Node runtime (not needed for Claude itself
-#   anymore, kept for user dev work)
+#   anymore, kept for user dev work). Bookworm ships Node 18, which reached
+#   upstream EOL in April 2025; users who need a current Node should install
+#   one under /config via nvm/fnm, or use bun instead.
 # - ripgrep: system ripgrep (USE_BUILTIN_RIPGREP=0 below)
 # - gh: GitHub PRs/issues/workflows
 # - openssh-client: SSH for git operations
@@ -57,24 +61,25 @@ RUN arch="$(uname -m)" \
 
 # --- yq (Go version) -----------------------------------------------------
 # Debian ships a Python yq; we use mikefarah's Go yq for YAML round-tripping.
-ARG YQ_VERSION=v4.44.5
+ARG YQ_VERSION=v4.53.6
 RUN arch="$(dpkg --print-architecture)" \
     && curl -fsSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${arch}" \
     && chmod +x /usr/local/bin/yq \
     && yq --version
 
 # --- Claude Code CLI ------------------------------------------------------
-# Official native installer. Works on glibc distros (Debian). Pinned version.
-# Auto-updates are disabled via DISABLE_AUTOUPDATER in default settings; the
-# image is the unit of update.
-ENV CLAUDE_VERSION=2.1.114
+# Official native installer. Works on glibc distros (Debian). Pinned version
+# is only the *starting point* — run.sh persists the install dir and
+# re-points the launcher on every boot, so Claude's own auto-updater and
+# `claude install X` both stick across restarts. See run.sh for the details.
+ENV CLAUDE_VERSION=2.1.257
 RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_VERSION}" \
     && /root/.local/bin/claude --version
 
 # --- Bun ------------------------------------------------------------------
 # Required by Bun-based plugin runtimes (e.g. the Telegram channel plugin).
 # BUN_INSTALL=/usr/local lands the binary at /usr/local/bin/bun (on PATH).
-ENV BUN_VERSION=1.3.12
+ENV BUN_VERSION=1.4.0
 ENV BUN_INSTALL=/usr/local
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
     && /usr/local/bin/bun --version
