@@ -38,3 +38,4 @@ Thumbs.db
 .remember/
 .scratchpad/
 .orchestrator-mode.state
+.orchestrator-mode.json
